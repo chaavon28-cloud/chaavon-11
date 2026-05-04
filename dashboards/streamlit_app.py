@@ -1,13 +1,16 @@
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from datetime import date, datetime
+import re
+from datetime import datetime
 import streamlit as st
 import pandas as pd
-from dotenv import load_dotenv
 from supabase import create_client
 from src.screening import clean_name, match_name, calculate_risk  # ✅ import from src
 from src.pdf_generator import generate_pdf
+
+SUPABASE_URL = "https://guqjmtgqaxperzxfsmel.supabase.co"
+SUPABASE_KEY = "sb_publishable_SMWNZub4TscXI1SMEOaOww_HQ3sYELO"
 
 st.set_page_config(
     page_title="Vessel Sanctions Screening",
@@ -125,6 +128,14 @@ st.markdown(
     .risk-fill {
         height: 100%;
         border-radius: 999px;
+        transition: width 0.9s ease;
+        animation: riskPulse 1.1s ease-out;
+    }
+
+    @keyframes riskPulse {
+        from {
+            width: 0%;
+        }
     }
 
     .report-section {
@@ -172,92 +183,163 @@ st.markdown(
     .report-line strong {
         color: var(--bank-text);
     }
+
+    .access-card {
+        padding: 1rem;
+        border: 1px solid #00FF9C;
+        border-radius: 12px;
+        background: #111111;
+        margin: 1rem 0;
+    }
+
+    .access-card h3 {
+        color: #00FF9C !important;
+        margin-top: 0;
+    }
+
+    .status-hero {
+        font-size: 1.7rem;
+        font-weight: 900;
+        margin: 0 0 0.75rem 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-load_dotenv()
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-if not supabase_url or not supabase_key:
-    st.error("Supabase environment variables are not configured.")
+try:
+    test = supabase.table("users_access").select("*").limit(1).execute()
+    st.success("Supabase connected")
+except Exception as e:
+    st.error(f"Supabase connection failed: {e}")
     st.stop()
 
-supabase = create_client(supabase_url, supabase_key)
+for key, default in {
+    "authenticated": False,
+    "checked_access": False,
+    "user_email": "",
+    "user": {},
+    "expiry_display": "Not specified",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 
-def parse_expiry_date(expiry_date):
-    if isinstance(expiry_date, date):
-        return expiry_date
-    return datetime.fromisoformat(str(expiry_date).replace("Z", "+00:00")).date()
+def show_support_info():
+    st.info("If you believe this is a mistake, contact support.")
 
 
-def validate_user_access(user_email):
-    response = (
-        supabase.table("users_access")
-        .select("is_active, expiry_date")
-        .eq("email", user_email)
-        .limit(1)
-        .execute()
-    )
+def format_expiry(end_date):
+    if not end_date:
+        return "Not specified", None
 
-    if not response.data:
-        st.error("Access denied.")
-        st.stop()
+    try:
+        expiry = datetime.fromisoformat(str(end_date).replace("Z", ""))
+    except Exception:
+        return None, None
 
-    access = response.data[0]
-
-    if not access.get("is_active"):
-        st.error("Access inactive.")
-        st.stop()
-
-    expiry_date = parse_expiry_date(access.get("expiry_date"))
-    if expiry_date < date.today():
-        st.error("Access expired.")
-        st.stop()
-
-    return access
+    return expiry.strftime("%Y-%m-%d %H:%M UTC"), expiry
 
 
-if "user" not in st.session_state:
-    st.session_state["user"] = None
+def show_subscription_card():
+    st.markdown("""
+    <div class="access-card">
+    <h3>Subscription Access</h3>
 
-if not st.session_state["user"]:
-    st.subheader("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    <p><b>Price:</b> $1198 USD / 28 days</p>
 
-    if st.button("Sign In"):
-        try:
-            auth_response = supabase.auth.sign_in_with_password({
-                "email": email,
-                "password": password,
-            })
-            st.session_state["user"] = auth_response.user
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Login failed: {exc}")
+    <p>
+    After payment, access will be manually activated within 12 hours.<br>
+    Subscription validity: <b>28 days from activation</b>.
+    </p>
+
+    <a href="https://www.paypal.com/ncp/payment/URXM2BPFFLHXC" target="_blank">
+    <button style="
+    background:#00FF9C;
+    color:#000;
+    padding:10px 16px;
+    border:none;
+    border-radius:10px;
+    font-weight:800;
+    cursor:pointer;
+    ">
+    Activate Access
+    </button>
+    </a>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+if not st.session_state.authenticated:
+    st.title("Secure Access")
+    show_subscription_card()
+
+    user_email_input = st.text_input("Enter your registered email to access the platform")
+
+    if st.button("Access Platform"):
+        user_email_input = user_email_input.strip().lower()
+
+        if not user_email_input:
+            st.warning("Please enter your email to continue")
+            show_support_info()
+            st.stop()
+
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", user_email_input):
+            st.error("Enter a valid email address")
+            show_support_info()
+            st.stop()
+
+        with st.spinner("Validating access..."):
+            try:
+                response = supabase.table("users_access").select("*").eq("email", user_email_input).execute()
+            except Exception:
+                st.error("System temporarily unavailable. Try again shortly.")
+                show_support_info()
+                st.stop()
+
+        st.session_state.checked_access = True
+
+        if not response or not hasattr(response, "data") or not response.data:
+            st.error("Access denied. Email not registered.")
+            show_support_info()
+            st.stop()
+
+        user = response.data[0]
+        approved = user.get("approved", False)
+        end_date = user.get("end_date", None)
+
+        if not approved:
+            st.error("Access not approved yet.")
+            show_support_info()
+            st.stop()
+
+        expiry_display, expiry = format_expiry(end_date)
+        if expiry_display is None:
+            st.error("Invalid account configuration. Contact support.")
+            show_support_info()
+            st.stop()
+
+        if expiry and expiry < datetime.utcnow():
+            st.error("Your access has expired.")
+            show_support_info()
+            st.stop()
+
+        st.session_state.user_email = user_email_input
+        st.session_state.user = user
+        st.session_state.expiry_display = expiry_display
+        st.session_state.authenticated = True
+        st.rerun()
 
     st.stop()
 
-user_email = st.session_state["user"].email
-user_data = validate_user_access(user_email)
+if not st.session_state.get("authenticated"):
+    st.stop()
 
-st.markdown(f"""
-<div style="
-padding:0.8rem;
-border:1px solid #00FF9C;
-border-radius:10px;
-background:#0c0c0c;
-margin-bottom:1rem;
-">
-<p><b>Account:</b> {user_email}</p>
-<p><b>Status:</b> {"ACTIVE" if user_data["is_active"] else "INACTIVE"}</p>
-<p><b>Expiry:</b> {user_data["expiry_date"]}</p>
-</div>
-""", unsafe_allow_html=True)
+user_email = st.session_state.user_email
+user = st.session_state.user
+expiry_display = st.session_state.expiry_display
 
 
 @st.cache_data
@@ -288,41 +370,30 @@ def load_alt_names():
     return alt
 
 
-# --- Streamlit UI ---
-st.title("Vessel Sanctions Screening for Crude Cargo")
+top_left, top_right = st.columns([4, 1])
+with top_left:
+    st.success(f"Access granted for {user_email}")
+with top_right:
+    if st.button("Reset Session"):
+        st.session_state.clear()
+        st.rerun()
 
-st.markdown("""
+st.markdown(f"""
 <div style="
-padding: 1rem;
-border: 1px solid #00FF9C;
-border-radius: 12px;
-background: #111111;
-margin-bottom: 1rem;
-">
-<h3 style="color:#00FF9C;">Subscription Access</h3>
-
-<p><b>Price:</b> $1198 USD / 28 days</p>
-
-<p>
-After payment, access will be manually activated within 12 hours.<br>
-Subscription validity: <b>28 days from activation</b>.
-</p>
-
-<a href="https://www.paypal.com/ncp/payment/URXM2BPFFLHXC" target="_blank">
-<button style="
-background:#00FF9C;
-color:#000;
-padding:10px 16px;
-border:none;
+padding:0.8rem;
+border:1px solid #00FF9C;
 border-radius:10px;
-font-weight:800;
-cursor:pointer;
+background:#0c0c0c;
+margin-bottom:1rem;
 ">
-Activate Access
-</button>
-</a>
+<p><b>Account:</b> {user_email}</p>
+<p><b>Status:</b> {"APPROVED" if user.get("approved", False) else "NOT APPROVED"}</p>
+<p><b>Expiry:</b> {expiry_display}</p>
 </div>
 """, unsafe_allow_html=True)
+
+# --- Streamlit UI ---
+st.title("Vessel Sanctions Screening for Crude Cargo")
 
 st.write("Enter a vessel name to screen against the OFAC list.")
 
@@ -332,12 +403,20 @@ ais_gap = st.number_input("AIS Gap (hours)", min_value=0, max_value=720, value=0
 
 run_check = st.button("Run Screening")
 
-sdn = load_sdn_data()
-alt = load_alt_names()
-sanctions_df = pd.concat([sdn, alt], ignore_index=True)
-sanctions_df = sanctions_df.dropna().drop_duplicates()
-sanctions_df["clean_name"] = sanctions_df["name"].astype(str).apply(clean_name)
-sanctions_list = sanctions_df["clean_name"].tolist()
+try:
+    sdn = load_sdn_data()
+    alt = load_alt_names()
+    sanctions_df = pd.concat([sdn, alt], ignore_index=True)
+    sanctions_df = sanctions_df.dropna().drop_duplicates()
+    sanctions_df["clean_name"] = sanctions_df["name"].astype(str).apply(clean_name)
+    sanctions_list = sanctions_df["clean_name"].tolist()
+except Exception:
+    st.error("Sanctions data failed to load. Please retry.")
+    st.stop()
+
+if not sanctions_list:
+    st.error("Sanctions data is unavailable. Please retry.")
+    st.stop()
 
 if run_check:
     if not vessel_name.strip():
@@ -345,20 +424,33 @@ if run_check:
         st.stop()
 
     clean_vessel = clean_name(vessel_name)
-    match, score, flag = match_name(clean_vessel, sanctions_list)
+    with st.spinner("Running sanctions screening..."):
+        try:
+            match, score, flag = match_name(clean_vessel, sanctions_list)
+        except Exception:
+            st.error("Screening failed. Please retry.")
+            st.stop()
 
-    risk = calculate_risk(flag, score, ais_gap)
+    try:
+        risk = calculate_risk(flag, score, ais_gap)
+    except Exception:
+        st.error("Risk calculation failed. Please retry.")
+        st.stop()
     risk_level = "Low"
     risk_badge = "badge-low"
     recommendation = "Proceed with standard compliance review."
     if risk >= 70:
         risk_level = "High"
         risk_badge = "badge-high"
+        risk_color = "#FF4B4B"
         recommendation = "Escalate for immediate compliance review before proceeding."
     elif risk >= 40:
         risk_level = "Medium"
         risk_badge = "badge-medium"
+        risk_color = "#FFD166"
         recommendation = "Review supporting vessel activity and sanctions context."
+    else:
+        risk_color = "#00FF9C"
 
     flags_triggered = []
     if flag:
@@ -367,8 +459,24 @@ if run_check:
         flags_triggered.append("AIS gap >= 24 hours")
     flags_text = ", ".join(flags_triggered) if flags_triggered else "No risk flags triggered"
 
+    try:
+        supabase.table("usage_logs").insert({
+            "email": user_email,
+            "timestamp": datetime.utcnow().isoformat()
+        }).execute()
+    except:
+        pass
+
     st.markdown('<div class="result-card">', unsafe_allow_html=True)
     st.header("Compliance Report")
+    st.markdown(
+        f"""
+        <p class="status-hero {'status-match' if flag else 'status-clear'}">
+            {'Sanctions Match Found' if flag else 'No Sanctions Match Found'}
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
 
     summary_col, screening_col, indicators_col = st.columns(3)
 
@@ -396,7 +504,7 @@ if run_check:
                 <div class="section-title">Sanctions Screening</div>
                 <p class="report-line"><strong>Match:</strong> <span class="badge {match_badge}">{match_status}</span></p>
                 <p class="report-line"><strong>Confidence:</strong> {confidence}</p>
-                <p class="report-line"><strong>Matched Entity:</strong> {matched_entity}</p>
+                <p class="report-line"><strong>Matched Vessel:</strong> {matched_entity}</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -414,11 +522,28 @@ if run_check:
             unsafe_allow_html=True,
         )
 
-    st.markdown("### Risk Score")
-    st.progress(min(max(int(risk), 0), 100))
+    risk_width = min(max(int(risk), 0), 100)
+    st.markdown(
+        f"""
+        <div class="risk-row">
+            <div class="risk-label">
+                <span>Risk Score</span>
+                <span>{risk}/100</span>
+            </div>
+            <div class="risk-track">
+                <div class="risk-fill" style="width: {risk_width}%; background: {risk_color};"></div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.metric("Risk Score", f"{risk}/100")
 
-    pdf_bytes = generate_pdf(vessel_name, match, score, risk)
+    try:
+        pdf_bytes = generate_pdf(vessel_name, match, score, risk)
+    except Exception:
+        st.error("Report generation failed. Please retry.")
+        st.stop()
 
     st.download_button(
         label="📄 Download Compliance Report",
