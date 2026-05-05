@@ -49,7 +49,7 @@ st.markdown(
     }
 
     html, body, [class*="css"], .stApp {
-        background: radial-gradient(circle at center, rgba(0,96,57,0.15), #000000 60%);
+        background: #000000;
         color: var(--text);
         font-family: -apple-system, BlinkMacSystemFont, "San Francisco", sans-serif;
     }
@@ -94,7 +94,12 @@ st.markdown(
     div[data-testid="stTextInput"] input:focus,
     div[data-testid="stNumberInput"] input:focus {
         border-color: var(--green);
-        box-shadow: 0 0 0 1px var(--green);
+        box-shadow: none;
+    }
+
+    button:focus {
+        outline: none !important;
+        box-shadow: none !important;
     }
 
     .stButton > button,
@@ -106,16 +111,31 @@ st.markdown(
         border-radius: 999px;
         font-weight: 700;
         padding: 12px 32px;
-        transition: all 0.2s ease;
     }
 
     .stButton > button:hover,
     .stDownloadButton > button:hover,
     .stLinkButton > a:hover {
-        background: #0a7a4a;
-        border-color: #0a7a4a;
+        background: var(--green);
+        border-color: var(--green);
         color: black;
-        transform: translateY(-1px);
+    }
+
+    div[data-testid="stButton"] button[kind="secondary"] {
+        background: transparent !important;
+        border: none !important;
+        color: #006039 !important;
+        font-size: 16px !important;
+        padding: 0 !important;
+        min-height: auto !important;
+        line-height: 1.2 !important;
+        box-shadow: none !important;
+    }
+
+    div[data-testid="stButton"] button[kind="secondary"]:hover {
+        background: transparent !important;
+        border: none !important;
+        color: #006039 !important;
     }
 
     .navbar {
@@ -176,7 +196,7 @@ st.markdown(
     .main-title {
         font-size: 72px;
         font-weight: 700;
-        letter-spacing: -1.5px;
+        letter-spacing: -1px;
         text-align: center;
         color: var(--text);
         margin: 0;
@@ -187,49 +207,59 @@ st.markdown(
         font-size: 18px;
         color: #9CA3AF;
         text-align: center;
-        margin-top: 12px;
+        margin-top: 8px;
         max-width: 600px;
         margin-left: auto;
         margin-right: auto;
+        opacity: 0.7;
     }
 
     .cta-wrapper {
         text-align: center;
         margin-top: 20px;
-        display: flex;
-        justify-content: center;
     }
 
-    .cta-wrapper .stButton {
-        display: inline-flex;
-    }
-
-    .card {
-        background: rgba(20,20,20,0.6);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(0,96,57,0.4);
-        border-radius: 16px;
-        padding: 22px;
-        margin-bottom: 28px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    }
-
-    .card-label {
+    .cta-text {
+        display: inline-block;
+        font-size: 16px;
         color: #006039;
-        font-size: 11px;
-        letter-spacing: 1px;
+        cursor: pointer;
+        text-decoration: none;
     }
 
-    .card-title {
+    .folder {
+        position: relative;
+        margin-bottom: 40px;
+    }
+
+    .folder-tab {
+        width: 42%;
+        height: 12px;
+        background: #121212;
+        border: 1px solid rgba(0,96,57,0.35);
+        border-bottom: none;
+        border-radius: 8px 8px 0 0;
+        margin-left: 6px;
+    }
+
+    .folder-body {
+        background: #0f0f0f;
+        border: 1px solid rgba(0,96,57,0.4);
+        border-radius: 0 12px 12px 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,96,57,0.15) inset;
+    }
+
+    .folder-title {
         font-size: 16px;
         font-weight: 600;
-        margin-top: 6px;
-        color: var(--text);
+        color: #FFFFFF;
     }
 
-    .card-text {
-        color: #B9C7C0;
-        margin-top: 6px;
+    .folder-text {
+        margin-top: 8px;
+        color: #9CA3AF;
+        font-size: 14px;
         line-height: 1.6;
     }
 
@@ -548,21 +578,20 @@ st.markdown(
             flex: 2 1 0;
         }
 
-        .landing-hero-grid .card {
+        .landing-hero-grid .folder {
+            margin-bottom: 24px;
+        }
+
+        .landing-hero-grid .folder-body {
             padding: 14px;
-            margin-bottom: 16px;
             border-radius: 12px;
         }
 
-        .landing-hero-grid .card-label {
-            font-size: 9px;
-        }
-
-        .landing-hero-grid .card-title {
+        .landing-hero-grid .folder-title {
             font-size: 13px;
         }
 
-        .landing-hero-grid .card-text {
+        .landing-hero-grid .folder-text {
             font-size: 12px;
             line-height: 1.45;
         }
@@ -741,14 +770,16 @@ def logo_base64():
         return base64.b64encode(logo_file.read()).decode("utf-8")
 
 
-def card(title, text):
-    return f'''
-    <div class="card">
-        <div class="card-label">{title.upper()}</div>
-        <div class="card-title">{title}</div>
-        <div class="card-text">{text}</div>
+def folder(title, text):
+    return f"""
+    <div class="folder">
+        <div class="folder-tab"></div>
+        <div class="folder-body">
+            <div class="folder-title">{title}</div>
+            <div class="folder-text">{text}</div>
+        </div>
     </div>
-    '''
+    """
 
 
 def render_landing_page():
@@ -759,15 +790,15 @@ def render_landing_page():
 
     with left:
         st.markdown(
-            card(
+            folder(
                 "Risk Intelligence",
                 "Structured counterparty risk evaluation using deterministic models.",
             ),
             unsafe_allow_html=True,
         )
-        st.markdown("<div style='margin-left:20px;'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-left:50px;'>", unsafe_allow_html=True)
         st.markdown(
-            card(
+            folder(
                 "Audit Integrity",
                 "Every decision is recorded, traceable, and defensible.",
             ),
@@ -782,14 +813,16 @@ def render_landing_page():
             unsafe_allow_html=True,
         )
         st.markdown("<div class='cta-wrapper'>", unsafe_allow_html=True)
-        if st.button("Join Now", key="hero_join"):
-            go_to("register")
+        if st.button("Join Now →", key="cta_link", type="secondary"):
+            st.session_state.page = "register"
+            st.query_params["page"] = "register"
+            st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown("<div style='margin-top:30px;'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:60px;'>", unsafe_allow_html=True)
         st.markdown(
-            card(
+            folder(
                 "Counterparty Controls",
                 "Entity matching, jurisdiction exposure, and behavioral risk signals.",
             ),
@@ -797,7 +830,7 @@ def render_landing_page():
         )
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown(
-            card(
+            folder(
                 "Controlled Access",
                 "Approval-gated platform with enforced subscription lifecycle.",
             ),
