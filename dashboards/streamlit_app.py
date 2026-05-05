@@ -24,6 +24,20 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    [data-testid="stToolbar"] {display: none;}
+    [data-testid="stDecoration"] {display: none;}
+    [data-testid="stStatusWidget"] {display: none;}
+    [data-testid="stSidebar"] {display: none;}
+    [data-testid="stHeader"] {display: none;}
+    [data-testid="stAppDeployButton"] {display: none;}
+    [data-testid="stAppViewContainer"] > .main {padding-top: 0;}
+    [data-testid="stAppHeader"] {display: none;}
+    [data-testid="stHeaderActionElements"] {display: none;}
+    button[kind="header"] {display: none;}
+
     :root {
         --bg: #000000;
         --card: #111111;
@@ -34,9 +48,10 @@ st.markdown(
         --danger: #FF4D4D;
     }
 
-    .stApp {
+    html, body, [class*="css"], .stApp {
         background: var(--bg);
         color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
     header[data-testid="stHeader"] {
@@ -44,9 +59,8 @@ st.markdown(
     }
 
     div.block-container {
-        max-width: 1180px;
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        max-width: 1200px;
+        padding: 40px 24px;
     }
 
     h1, h2, h3, label, .stMarkdown {
@@ -60,6 +74,12 @@ st.markdown(
 
     .stMarkdown p {
         color: var(--muted);
+    }
+
+    .main-container {
+        max-width: 1200px;
+        margin: auto;
+        padding: 40px 24px;
     }
 
     div[data-testid="stTextInput"] input,
@@ -101,7 +121,7 @@ st.markdown(
         align-items: center;
         justify-content: space-between;
         gap: 2rem;
-        padding: 1rem 0 1.4rem 0;
+        padding: 20px 40px;
         border-bottom: 1px solid var(--line);
     }
 
@@ -118,10 +138,11 @@ st.markdown(
         color: var(--muted);
         font-weight: 800;
         font-size: 1rem;
+        flex-wrap: wrap;
     }
 
     .hero {
-        min-height: 620px;
+        min-height: 520px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -131,21 +152,29 @@ st.markdown(
 
     .hero-title {
         color: var(--text);
-        font-size: clamp(4rem, 13vw, 9.4rem);
-        font-weight: 950;
-        line-height: 0.95;
+        font-size: 80px;
+        font-weight: 700;
+        line-height: 1;
         margin: 0;
+        letter-spacing: -2px;
     }
 
     .hero-subtitle {
-        color: var(--muted);
-        font-size: clamp(1.5rem, 3vw, 2.45rem);
-        margin: 2rem 0 2.5rem 0;
+        font-size: 22px;
+        text-align: center;
+        color: #9CA3AF;
+        margin-top: 10px;
     }
 
     .hero-subtitle span {
         color: var(--green);
         font-weight: 900;
+    }
+
+    .cta-wrap {
+        margin-top: 40px;
+        display: flex;
+        justify-content: center;
     }
 
     .panel {
@@ -159,6 +188,10 @@ st.markdown(
     .compact-panel {
         max-width: 560px;
         margin: 3rem auto 0 auto;
+    }
+
+    .section {
+        margin-top: 120px;
     }
 
     .report-section {
@@ -241,6 +274,27 @@ st.markdown(
     @keyframes riskPulse {
         from { width: 0%; }
     }
+
+    @media (max-width: 760px) {
+        .top-nav {
+            padding: 12px 0 20px 0;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .nav-links {
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .hero-title {
+            font-size: 56px;
+        }
+
+        .section {
+            margin-top: 80px;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -297,6 +351,40 @@ def render_top_nav():
     )
 
 
+def terms_page():
+    st.markdown('<div class="section">', unsafe_allow_html=True)
+    st.markdown("## Terms of Use")
+    st.markdown(
+        """
+ChaAVON provides access to maritime intelligence, compliance insights, and risk screening tools ("Services").
+
+By accessing or using the platform, you agree to the following:
+
+### 1. Use of Service
+You agree to use the platform only for lawful business purposes. Any misuse, reverse engineering, scraping, or redistribution of data is strictly prohibited.
+
+### 2. Data Accuracy
+All data is provided "as is" without warranties. ChaAVON does not guarantee completeness or accuracy.
+
+### 3. Subscription Access
+Access is granted only to approved users with active subscriptions. Access automatically expires after the subscription period.
+
+### 4. Intellectual Property
+All platform data, models, and outputs remain the property of ChaAVON.
+
+### 5. Liability
+ChaAVON is not liable for any decisions made based on platform outputs.
+
+### 6. Termination
+We reserve the right to revoke access at any time for misuse or violation of terms.
+
+### 7. Updates
+Terms may change at any time. Continued use constitutes acceptance.
+        """
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 @st.cache_data
 def logo_base64():
     import base64
@@ -306,38 +394,25 @@ def logo_base64():
 
 def render_landing_page():
     render_top_nav()
-    _, join_col = st.columns([6, 1])
-    with join_col:
-        if st.button("Join Now", key="nav_join"):
-            go_to("register")
-
     st.markdown(
         """
-        <section class="hero">
-            <h1 class="hero-title">ChaAVON</h1>
-            <p class="hero-subtitle">Intelligence, <span>composed.</span></p>
-        </section>
+        <div class="main-container">
+            <section class="hero">
+                <div class="hero-title">ChaAVON</div>
+                <div class="hero-subtitle">Intelligence, <span>composed.</span></div>
+            </section>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
+    st.markdown('<div class="cta-wrap">', unsafe_allow_html=True)
     _, cta_col, _ = st.columns([4, 1, 4])
     with cta_col:
-        if st.button("Join Now", key="hero_join"):
+        if st.button("Join Now", key="hero_join", use_container_width=True):
             go_to("register")
-
-    with st.expander("Terms & Conditions"):
-        st.markdown(
-            """
-            - Service provides vessel sanctions screening insights.
-            - No guarantee of regulatory compliance.
-            - User responsible for final decisions.
-            - Subscription valid for one month from approval.
-            - No refunds after activation.
-            - Manual verification may be required.
-            - Data sourced from public/global sanction lists.
-            """
-        )
+    st.markdown("</div>", unsafe_allow_html=True)
+    terms_page()
 
 
 def render_registration_page():
