@@ -145,12 +145,73 @@ st.markdown(
     }
 
     .hero {
-        min-height: 420px;
+        position: relative;
+        min-height: 560px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
+        overflow: hidden;
+    }
+
+    .hero-orb {
+        position: absolute;
+        width: 460px;
+        height: 460px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(0, 96, 57, 0.18) 0%, rgba(0, 96, 57, 0.04) 45%, rgba(0, 0, 0, 0) 70%);
+        filter: blur(12px);
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+    }
+
+    .floating-card {
+        position: absolute;
+        width: 220px;
+        padding: 18px 18px 16px 18px;
+        background: rgba(17, 17, 17, 0.92);
+        border: 1px solid rgba(0, 96, 57, 0.7);
+        border-radius: 18px;
+        box-shadow: 0 26px 60px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(10px);
+        text-align: left;
+    }
+
+    .floating-card.left-top { top: 64px; left: 32px; }
+    .floating-card.left-bottom { bottom: 72px; left: 58px; }
+    .floating-card.right-top { top: 80px; right: 32px; }
+    .floating-card.right-bottom { bottom: 90px; right: 54px; }
+
+    .floating-kicker {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--green);
+        margin-bottom: 0.6rem;
+    }
+
+    .floating-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 0.45rem;
+    }
+
+    .floating-copy {
+        font-size: 0.92rem;
+        line-height: 1.55;
+        color: var(--muted);
+    }
+
+    .hero-stack {
+        position: relative;
+        z-index: 2;
+        max-width: 760px;
+        padding: 0 24px;
     }
 
     .hero-title {
@@ -182,6 +243,26 @@ st.markdown(
         line-height: 1.8;
     }
 
+    .premium-block {
+        background: linear-gradient(180deg, rgba(17, 17, 17, 0.96) 0%, rgba(10, 10, 10, 0.98) 100%);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        padding: 52px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .green-strip {
+        margin-top: 36px;
+        padding-top: 28px;
+        border-top: 1px solid rgba(0, 96, 57, 0.5);
+        color: var(--green);
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        line-height: 1.9;
+    }
+
     .green {
         color: var(--green);
     }
@@ -206,8 +287,73 @@ st.markdown(
     }
 
     .compact-panel {
-        max-width: 560px;
+        max-width: 620px;
         margin: 3rem auto 0 auto;
+    }
+
+    .form-note {
+        color: var(--muted);
+        font-size: 0.98rem;
+        line-height: 1.7;
+        margin-bottom: 1.5rem;
+    }
+
+    .page-shell {
+        max-width: 840px;
+        margin: 0 auto;
+        padding: 52px 0 0 0;
+    }
+
+    .footer-shell {
+        margin-top: 120px;
+        padding: 56px 0 24px 0;
+        border-top: 1px solid var(--line);
+    }
+
+    .footer-brand {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 1rem;
+    }
+
+    .footer-copy,
+    .footer-meta,
+    .footer-link-text {
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.8;
+    }
+
+    .footer-heading {
+        color: var(--text);
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
+
+    .footer-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+    }
+
+    .footer-shell .stButton > button {
+        background: transparent;
+        border: none;
+        padding: 0;
+        border-radius: 0;
+        color: var(--muted);
+        font-weight: 500;
+        justify-content: flex-start;
+        min-height: auto;
+        box-shadow: none;
+    }
+
+    .footer-shell .stButton > button:hover {
+        background: transparent;
+        color: var(--text);
+        border: none;
     }
 
     .report-section {
@@ -300,6 +446,24 @@ st.markdown(
             font-size: 56px;
         }
 
+        .hero {
+            min-height: 460px;
+        }
+
+        .floating-card {
+            position: static;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .hero-stack {
+            padding: 40px 0;
+        }
+
+        .premium-block {
+            padding: 32px 24px;
+        }
+
         .container {
             padding: 40px 16px;
         }
@@ -315,6 +479,8 @@ for key, default in {
     "page": "landing",
     "authenticated": False,
     "user_email": "",
+    "user_name": "",
+    "company_type": "",
     "user": {},
     "expiry_display": "Not specified",
 }.items():
@@ -357,48 +523,89 @@ def render_top_nav():
     )
 
 
+def render_footer():
+    st.markdown('<div class="footer-shell">', unsafe_allow_html=True)
+    col1, col2, col3, col4 = st.columns([1.5, 1, 1, 1])
+
+    with col1:
+        st.markdown('<div class="footer-brand">ChaAVON</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="footer-copy">Structured intelligence for high-stakes decisions.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div style="height:48px"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer-meta">© 2026 ChaAVON Inc.</div>', unsafe_allow_html=True)
+
+    with col2:
+        st.markdown('<div class="footer-heading">Product</div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="footer-list">
+                <div class="footer-link-text">Screening</div>
+                <div class="footer-link-text">Compliance Intelligence</div>
+                <div class="footer-link-text">Auditability</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col3:
+        st.markdown('<div class="footer-heading">Company</div>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="footer-list">
+                <div class="footer-link-text">About</div>
+                <div class="footer-link-text">Security</div>
+                <div class="footer-link-text">Contact</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col4:
+        st.markdown('<div class="footer-heading">Legal</div>', unsafe_allow_html=True)
+        st.markdown('<div class="footer-link-text">Privacy</div>', unsafe_allow_html=True)
+        if st.button("Terms", key=f"footer_terms_{st.session_state.page}"):
+            go_to("terms")
+        st.markdown('<div class="footer-link-text">Cookie Policy</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def terms_page():
-    st.markdown('<div class="container">', unsafe_allow_html=True)
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Terms of Use</div>', unsafe_allow_html=True)
+    render_top_nav()
+    st.markdown('<div class="page-shell">', unsafe_allow_html=True)
+    st.title("Terms of Use")
     st.markdown(
         """
-<div class="section-text">
-ChaAVON provides access to compliance intelligence, sanctions screening tools, and structured decision systems (the "Services").<br><br>
+        ChaAVON provides access to compliance intelligence, sanctions screening tools, and structured decision systems for professional users operating in regulated and high-scrutiny environments. By accessing or using the platform, you agree to the terms below, which govern subscription access, permissible use, and allocation of responsibility.
 
-By accessing or using the platform, you agree to the following:
-<br><br>
+        ### 1. Use of Services
+        The Services may be used only for lawful, professional, and business purposes. You may not misuse the platform, interfere with its operation, or use it in a manner inconsistent with applicable laws, regulations, or internal compliance obligations.
 
-### 1. Use of Service
-You agree to use the Services solely for lawful, professional, and business purposes. Unauthorized use, reverse engineering, data extraction, or redistribution is strictly prohibited.
+        ### 2. Data & Accuracy
+        Data, screening outputs, and supporting intelligence are provided on an "as is" and "as available" basis. ChaAVON does not guarantee completeness, accuracy, timeliness, or fitness for any specific purpose, and no output should be interpreted as legal advice or a final regulatory determination.
 
-### 2. Data & Accuracy
-All data is provided on an "as is" and "as available" basis. ChaAVON does not guarantee completeness, accuracy, or real-time validity of any data or outputs.
+        ### 3. Access & Subscription
+        Access is limited to approved users with an active subscription period recorded in the platform. Access may be suspended, restricted, or terminated when approval is withdrawn, subscription periods expire, or operational or compliance concerns require further review.
 
-### 3. Access & Subscription
-Access is granted only to authorized users with valid subscription periods. Access automatically expires upon reaching the defined end date.
+        ### 4. User Responsibilities
+        You remain solely responsible for reviewing outputs, applying internal judgment, and making final operational, commercial, or compliance decisions. You are also responsible for maintaining the confidentiality of account information submitted through the registration and access workflow.
 
-### 4. Decision Responsibility
-All outputs are informational. You remain solely responsible for decisions made using the platform.
+        ### 5. Intellectual Property
+        The platform, its models, interface design, output structures, data presentation methods, and supporting systems are owned exclusively by ChaAVON and protected by applicable intellectual property laws.
 
-### 5. Intellectual Property
-All systems, models, data structures, and outputs remain the exclusive property of ChaAVON.
+        ### 6. Restrictions
+        You may not copy, resell, redistribute, reverse engineer, scrape, or create derivative systems from the platform or its outputs without prior written authorization from ChaAVON. Automated extraction or external republication of data is prohibited.
 
-### 6. Restrictions
-You may not copy or redistribute platform data, build derivative systems, or use outputs for resale or external distribution.
+        ### 7. Liability Disclaimer
+        To the maximum extent permitted by law, ChaAVON disclaims liability for direct, indirect, incidental, consequential, regulatory, commercial, or reputational losses arising from use of, or reliance on, the Services or any output generated through the platform.
 
-### 7. Liability
-ChaAVON shall not be liable for any direct, indirect, or consequential losses arising from use of the Services.
+        ### 8. Availability & Access
+        ChaAVON does not guarantee uninterrupted availability, continuous uptime, or error-free performance. Access may be modified, paused, or revoked when operational maintenance, security reviews, data integrity concerns, or policy enforcement actions require it.
 
-### 8. Availability
-We do not guarantee uninterrupted or error-free service.
-
-### 9. Termination
-Access may be revoked at any time for violations of these terms.
-
-### 10. Updates
-Terms may be updated at any time. Continued use constitutes acceptance.
-</div>
+        ### 9. Governing Law
+        These terms are governed by the laws applicable to the jurisdiction designated by ChaAVON for the service relationship. Continued use of the platform after updates to these terms constitutes acceptance of the revised terms.
         """
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -417,8 +624,31 @@ def render_landing_page():
         """
         <div class="container">
             <section class="hero">
-                <div class="hero-title">ChaAVON</div>
-                <div class="hero-sub">Structured intelligence for high-stakes decisions.</div>
+                <div class="hero-orb"></div>
+                <div class="floating-card left-top">
+                    <div class="floating-kicker">Screening</div>
+                    <div class="floating-title">OFAC Vessel Intelligence</div>
+                    <div class="floating-copy">Fuzzy screening across SDN and alias datasets with controlled match scoring and repeatable logic.</div>
+                </div>
+                <div class="floating-card left-bottom">
+                    <div class="floating-kicker">Audit</div>
+                    <div class="floating-title">Reviewable Decisions</div>
+                    <div class="floating-copy">Every output is structured for compliance teams that need defensible workflows and documented rationale.</div>
+                </div>
+                <div class="floating-card right-top">
+                    <div class="floating-kicker">Risk</div>
+                    <div class="floating-title">Counterparty Controls</div>
+                    <div class="floating-copy">AIS disruption, sanctions proximity, and entity matching are surfaced in one institutional workflow.</div>
+                </div>
+                <div class="floating-card right-bottom">
+                    <div class="floating-kicker">Access</div>
+                    <div class="floating-title">Controlled Platform Entry</div>
+                    <div class="floating-copy">Approval-gated access, subscription enforcement, and structured screening execution from one interface.</div>
+                </div>
+                <div class="hero-stack">
+                    <div class="hero-title">ChaAVON</div>
+                    <div class="hero-sub">Structured intelligence for high-stakes decisions.</div>
+                </div>
             </section>
         </div>
         """,
@@ -437,11 +667,13 @@ def render_landing_page():
         <div class="container">
             <div class="divider"></div>
             <div class="section-title">What We Do</div>
-            <div class="section-text">
-                ChaAVON provides institutional-grade intelligence infrastructure for maritime compliance, sanctions screening, and counterparty risk analysis.<br><br>
-                We replace fragmented workflows with a unified system that enforces verification, standardizes decision-making, and preserves auditability across every interaction.<br><br>
-                Each screening output is generated through deterministic scoring models, ensuring consistency, transparency, and repeatability across jurisdictions and datasets.<br><br>
-                Our platform is designed for environments where errors are unacceptable, oversight is mandatory, and every decision must be defensible under scrutiny.
+            <div class="premium-block">
+                <div class="section-text">
+                    <p>ChaAVON provides institutional-grade intelligence infrastructure for maritime compliance, sanctions screening, and counterparty risk analysis.</p>
+                    <p>We replace fragmented workflows with a unified system that enforces verification, standardizes decision-making, and preserves auditability across every interaction.</p>
+                    <p>Each screening output is generated through deterministic scoring models, ensuring consistency, transparency, and repeatability across jurisdictions and datasets.</p>
+                    <p>Our platform is designed for environments where errors are unacceptable, oversight is mandatory, and every decision must be defensible under scrutiny.</p>
+                </div>
             </div>
         </div>
         """,
@@ -453,43 +685,99 @@ def render_landing_page():
         <div class="container">
             <div class="divider"></div>
             <div class="section-title">Execution Guarantees</div>
-            <div class="section-text">
-                Matching is deterministic. Assignments are produced by explicit scoring logic, not opaque recommendation systems.<br><br>
-                Payments are escrow-first. Funds are committed before work begins and released only through verified completion paths.<br><br>
-                Execution is dispute-locked. Active disputes suspend resolution, payout, and closure until formally resolved.<br><br>
-                Audit trails are immutable. Every action, transition, and decision is recorded and preserved.
-            </div>
-            <div class="divider"></div>
-            <div class="section-text green">
-                ALL ACTIONS ARE LOGGED. ALL EXECUTION PATHS ARE BOUNDED. ALL OUTCOMES ARE REVIEWABLE.
+            <div class="premium-block">
+                <div class="section-text">
+                    <p>Matching is deterministic. Assignments are produced by explicit scoring logic, not opaque recommendation systems.</p>
+                    <p>Payments are escrow-first. Funds are committed before work begins and released only through verified completion paths.</p>
+                    <p>Execution is dispute-locked. Active disputes suspend resolution, payout, and closure until formally resolved.</p>
+                    <p>Audit trails are immutable. Every action, transition, and decision is recorded and preserved.</p>
+                </div>
+                <div class="green-strip">
+                    ALL ACTIONS ARE LOGGED.<br>
+                    ALL EXECUTION PATHS ARE BOUNDED.<br>
+                    ALL OUTCOMES ARE REVIEWABLE.
+                </div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    terms_page()
-
 
 def render_registration_page():
+    render_top_nav()
     st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
     st.title("Request Access")
+    st.markdown(
+        '<div class="form-note">Submit your registration details to request controlled platform access. Access is reviewed manually and activated only after approval.</div>',
+        unsafe_allow_html=True,
+    )
+    name = st.text_input("Full Name", value=st.session_state.get("user_name", ""))
     email = st.text_input("Email", value=st.session_state.get("user_email", ""))
+    password = st.text_input("Password", type="password")
+    company_options = ["Trading Firm", "Broker", "Bank", "Other"]
+    default_company = st.session_state.get("company_type", company_options[0])
+    company_index = company_options.index(default_company) if default_company in company_options else 0
+    company = st.selectbox("Company Type", company_options, index=company_index)
 
     if st.button("Continue"):
+        name = name.strip()
         email = email.strip().lower()
+        password = password.strip()
 
+        if not name:
+            st.error("Enter your full name")
+            st.stop()
         if not is_valid_email(email):
             st.error("Enter a valid email address")
             st.stop()
+        if not password:
+            st.error("Enter a password")
+            st.stop()
 
+        existing_approved = False
+        existing_end_date = None
+
+        with st.spinner("Saving registration..."):
+            try:
+                existing = supabase.table("users_access").select(
+                    "email, approved, end_date, is_active, expiry_date, start_date"
+                ).eq("email", email).execute()
+                if existing and hasattr(existing, "data") and existing.data:
+                    existing_approved = existing.data[0].get("approved", False)
+                    existing_end_date = existing.data[0].get("end_date")
+                    is_active = existing.data[0].get("is_active", False)
+                    expiry_date = existing.data[0].get("expiry_date")
+                    start_date = existing.data[0].get("start_date")
+                else:
+                    is_active = False
+                    expiry_date = None
+                    start_date = None
+
+                # The live users_access table currently supports access fields only.
+                payload = {
+                    "email": email,
+                    "is_active": is_active,
+                    "expiry_date": expiry_date,
+                    "approved": existing_approved,
+                    "start_date": start_date,
+                    "end_date": existing_end_date,
+                }
+                supabase.table("users_access").upsert(payload, on_conflict="email").execute()
+            except Exception:
+                st.error("Registration could not be saved. Please retry.")
+                st.stop()
+
+        st.session_state.user_name = name
         st.session_state.user_email = email
+        st.session_state.company_type = company
         go_to("payment")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_payment_page():
+    render_top_nav()
     st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
     st.title("Subscription Access")
     st.markdown(
@@ -509,6 +797,7 @@ def render_payment_page():
 
 
 def render_access_check_page():
+    render_top_nav()
     st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
     st.title("Access Check")
     user_email = st.text_input("Email", value=st.session_state.get("user_email", ""))
@@ -764,8 +1053,13 @@ elif page == "payment":
     render_payment_page()
 elif page == "access":
     render_access_check_page()
+elif page == "terms":
+    terms_page()
 elif page == "app":
     render_main_app()
 else:
     st.session_state.page = "landing"
     st.rerun()
+
+if st.session_state.page != "app":
+    render_footer()
