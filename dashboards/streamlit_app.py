@@ -4,7 +4,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import re
 from datetime import datetime
 import streamlit as st
-import pandas as pd
 from supabase import create_client
 from src.screening import clean_name, match_name, calculate_risk
 from src.pdf_generator import generate_pdf
@@ -15,7 +14,7 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/URXM2BPFFLHXC"
 LOGO_PATH = "assets/logo.png"
 
 st.set_page_config(
-    page_title="ChaAVON",
+    page_title="ChaAVON — Structured intelligence for high-stakes decisions.",
     page_icon="assets/logo.png",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -116,29 +115,33 @@ st.markdown(
         color: var(--text);
     }
 
-    .top-nav {
+    .navbar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 2rem;
         padding: 20px 40px;
         border-bottom: 1px solid var(--line);
+    }
+
+    .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 12px;
     }
 
     .logo {
         width: 44px;
         height: 44px;
-        object-fit: contain;
+        border-radius: 50%;
+        object-fit: cover;
+        display: block;
     }
 
-    .nav-links {
-        display: flex;
-        justify-content: center;
-        gap: 2.4rem;
-        color: var(--muted);
-        font-weight: 800;
-        font-size: 1rem;
-        flex-wrap: wrap;
+    .brand {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        color: var(--text);
     }
 
     .hero {
@@ -289,15 +292,8 @@ st.markdown(
     }
 
     @media (max-width: 760px) {
-        .top-nav {
-            padding: 12px 0 20px 0;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .nav-links {
-            gap: 1rem;
-            font-size: 0.9rem;
+        .navbar {
+            padding: 16px 0 20px 0;
         }
 
         .hero-title {
@@ -350,13 +346,10 @@ def format_expiry(end_date):
 def render_top_nav():
     st.markdown(
         f"""
-        <div class="top-nav">
-            <img class="logo" src="data:image/png;base64,{logo_base64()}" />
-            <div class="nav-links">
-                <span>Platform</span>
-                <span>Industries</span>
-                <span>Security</span>
-                <span>About</span>
+        <div class="navbar">
+            <div class="brand-lockup">
+                <img class="logo" src="data:image/png;base64,{logo_base64()}" />
+                <div class="brand">ChaAVON</div>
             </div>
         </div>
         """,
