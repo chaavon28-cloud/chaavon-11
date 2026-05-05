@@ -129,6 +129,13 @@ st.markdown(
         gap: 12px;
     }
 
+    .brand-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+    }
+
     .logo {
         width: 44px;
         height: 44px;
@@ -145,45 +152,46 @@ st.markdown(
     }
 
     .hero {
-        position: relative;
-        min-height: 560px;
+        min-height: 520px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
-        overflow: hidden;
     }
 
     .hero-orb {
-        position: absolute;
         width: 460px;
         height: 460px;
         border-radius: 50%;
         background: radial-gradient(circle, rgba(0, 96, 57, 0.18) 0%, rgba(0, 96, 57, 0.04) 45%, rgba(0, 0, 0, 0) 70%);
         filter: blur(12px);
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
         pointer-events: none;
+        margin: 0 auto -360px auto;
+    }
+
+    .hero-grid {
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .hero-column {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        justify-content: center;
     }
 
     .floating-card {
-        position: absolute;
-        width: 220px;
+        width: 100%;
         padding: 18px 18px 16px 18px;
         background: rgba(17, 17, 17, 0.92);
         border: 1px solid rgba(0, 96, 57, 0.7);
-        border-radius: 18px;
+        border-radius: 16px;
         box-shadow: 0 26px 60px rgba(0, 0, 0, 0.42);
         backdrop-filter: blur(10px);
         text-align: left;
     }
-
-    .floating-card.left-top { top: 64px; left: 32px; }
-    .floating-card.left-bottom { bottom: 72px; left: 58px; }
-    .floating-card.right-top { top: 80px; right: 32px; }
-    .floating-card.right-bottom { bottom: 90px; right: 54px; }
 
     .floating-kicker {
         font-size: 0.72rem;
@@ -208,8 +216,6 @@ st.markdown(
     }
 
     .hero-stack {
-        position: relative;
-        z-index: 2;
         max-width: 760px;
         padding: 0 24px;
     }
@@ -268,7 +274,7 @@ st.markdown(
     }
 
     .cta-wrap {
-        margin: 50px auto 0 auto;
+        margin: 34px auto 0 auto;
         display: flex;
         justify-content: center;
     }
@@ -450,9 +456,11 @@ st.markdown(
             min-height: 460px;
         }
 
-        .floating-card {
-            position: static;
-            width: 100%;
+        .hero-grid {
+            gap: 0;
+        }
+
+        .hero-column {
             margin-top: 1rem;
         }
 
@@ -476,7 +484,7 @@ st.markdown(
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 for key, default in {
-    "page": "landing",
+    "page": "home",
     "authenticated": False,
     "user_email": "",
     "user_name": "",
@@ -487,9 +495,15 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
+allowed_pages = {"home", "register", "payment", "access", "terms", "app"}
+page_param = st.query_params.get("page")
+if page_param in allowed_pages and st.session_state.page != page_param:
+    st.session_state.page = page_param
+
 
 def go_to(page):
     st.session_state.page = page
+    st.query_params["page"] = page
     st.rerun()
 
 
@@ -513,10 +527,10 @@ def render_top_nav():
     st.markdown(
         f"""
         <div class="navbar">
-            <div class="brand-lockup">
+            <a class="brand-link" href="?page=home">
                 <img class="logo" src="data:image/png;base64,{logo_base64()}" />
                 <div class="brand">ChaAVON</div>
-            </div>
+            </a>
         </div>
         """,
         unsafe_allow_html=True,
@@ -541,7 +555,7 @@ def render_footer():
         st.markdown(
             """
             <div class="footer-list">
-                <div class="footer-link-text">Screening</div>
+                <div class="footer-link-text">Risk Intelligence</div>
                 <div class="footer-link-text">Compliance Intelligence</div>
                 <div class="footer-link-text">Auditability</div>
             </div>
@@ -620,47 +634,78 @@ def logo_base64():
 
 def render_landing_page():
     render_top_nav()
-    st.markdown(
-        """
-        <div class="container">
+    st.markdown('<div class="container">', unsafe_allow_html=True)
+    left, center, right = st.columns([1, 2, 1], gap="large")
+
+    with left:
+        st.markdown('<div class="hero-column">', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="floating-card">
+                <div class="floating-kicker">Intelligence</div>
+                <div class="floating-title">Risk Intelligence</div>
+                <div class="floating-copy">Structured counterparty risk evaluation using deterministic models.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            <div class="floating-card">
+                <div class="floating-kicker">Controls</div>
+                <div class="floating-title">Audit Integrity</div>
+                <div class="floating-copy">Every decision is recorded, traceable, and defensible.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with center:
+        st.markdown(
+            """
             <section class="hero">
                 <div class="hero-orb"></div>
-                <div class="floating-card left-top">
-                    <div class="floating-kicker">Screening</div>
-                    <div class="floating-title">OFAC Vessel Intelligence</div>
-                    <div class="floating-copy">Fuzzy screening across SDN and alias datasets with controlled match scoring and repeatable logic.</div>
-                </div>
-                <div class="floating-card left-bottom">
-                    <div class="floating-kicker">Audit</div>
-                    <div class="floating-title">Reviewable Decisions</div>
-                    <div class="floating-copy">Every output is structured for compliance teams that need defensible workflows and documented rationale.</div>
-                </div>
-                <div class="floating-card right-top">
-                    <div class="floating-kicker">Risk</div>
-                    <div class="floating-title">Counterparty Controls</div>
-                    <div class="floating-copy">AIS disruption, sanctions proximity, and entity matching are surfaced in one institutional workflow.</div>
-                </div>
-                <div class="floating-card right-bottom">
-                    <div class="floating-kicker">Access</div>
-                    <div class="floating-title">Controlled Platform Entry</div>
-                    <div class="floating-copy">Approval-gated access, subscription enforcement, and structured screening execution from one interface.</div>
-                </div>
                 <div class="hero-stack">
                     <div class="hero-title">ChaAVON</div>
                     <div class="hero-sub">Structured intelligence for high-stakes decisions.</div>
                 </div>
             </section>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="cta-wrap">', unsafe_allow_html=True)
+        _, cta_col, _ = st.columns([1.2, 1, 1.2])
+        with cta_col:
+            if st.button("Join Now", key="hero_join", use_container_width=True):
+                go_to("register")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown('<div class="cta-wrap">', unsafe_allow_html=True)
-    _, cta_col, _ = st.columns([4, 1, 4])
-    with cta_col:
-        if st.button("Join Now", key="hero_join", use_container_width=True):
-            go_to("register")
-    st.markdown("</div>", unsafe_allow_html=True)
+    with right:
+        st.markdown('<div class="hero-column">', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="floating-card">
+                <div class="floating-kicker">Exposure</div>
+                <div class="floating-title">Counterparty Controls</div>
+                <div class="floating-copy">Entity matching, jurisdiction exposure, and behavioral risk signals.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            <div class="floating-card">
+                <div class="floating-kicker">Platform</div>
+                <div class="floating-title">Controlled Access</div>
+                <div class="floating-copy">Approval-gated platform with enforced subscription lifecycle.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown(
         """
@@ -871,7 +916,8 @@ def load_data():
 
 def render_main_app():
     if not st.session_state.get("authenticated"):
-        st.session_state.page = "landing"
+        st.session_state.page = "home"
+        st.query_params["page"] = "home"
         st.stop()
 
     user_email = st.session_state.user_email
@@ -1045,7 +1091,7 @@ def render_main_app():
 
 
 page = st.session_state.page
-if page == "landing":
+if page == "home":
     render_landing_page()
 elif page == "register":
     render_registration_page()
@@ -1058,7 +1104,8 @@ elif page == "terms":
 elif page == "app":
     render_main_app()
 else:
-    st.session_state.page = "landing"
+    st.session_state.page = "home"
+    st.query_params["page"] = "home"
     st.rerun()
 
 if st.session_state.page != "app":
