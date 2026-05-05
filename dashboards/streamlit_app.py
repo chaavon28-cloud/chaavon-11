@@ -3,6 +3,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import re
 from datetime import datetime
+from textwrap import dedent
 import streamlit as st
 from supabase import create_client
 from src.screening import clean_name, match_name, calculate_risk
@@ -48,7 +49,7 @@ st.markdown(
     }
 
     html, body, [class*="css"], .stApp {
-        background: var(--bg);
+        background: radial-gradient(circle at center, rgba(0,96,57,0.15), #000000 60%);
         color: var(--text);
         font-family: -apple-system, BlinkMacSystemFont, "San Francisco", sans-serif;
     }
@@ -100,19 +101,21 @@ st.markdown(
     .stDownloadButton > button,
     .stLinkButton > a {
         background: var(--green);
-        color: var(--text);
+        color: black;
         border: 1px solid var(--green);
         border-radius: 999px;
-        font-weight: 800;
-        padding: 0.7rem 1.35rem;
+        font-weight: 700;
+        padding: 12px 32px;
+        transition: all 0.2s ease;
     }
 
     .stButton > button:hover,
     .stDownloadButton > button:hover,
     .stLinkButton > a:hover {
-        background: var(--green);
-        border-color: var(--green);
-        color: var(--text);
+        background: #0a7a4a;
+        border-color: #0a7a4a;
+        color: black;
+        transform: translateY(-1px);
     }
 
     .navbar {
@@ -151,122 +154,166 @@ st.markdown(
         color: var(--text);
     }
 
-    .hero {
-        min-height: 520px;
-        display: flex;
-        flex-direction: column;
+    .landing-shell {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 24px 28px 24px;
+    }
+
+    .landing-hero-grid {
+        padding: 86px 0 76px 0;
         align-items: center;
-        justify-content: center;
+    }
+
+    .landing-hero-grid div[data-testid="stHorizontalBlock"] {
+        align-items: center;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(.main-title) {
+        align-items: center;
+    }
+
+    .main-title {
+        font-size: 72px;
+        font-weight: 700;
+        letter-spacing: -1.5px;
         text-align: center;
-    }
-
-    .hero-orb {
-        width: 460px;
-        height: 460px;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(0, 96, 57, 0.18) 0%, rgba(0, 96, 57, 0.04) 45%, rgba(0, 0, 0, 0) 70%);
-        filter: blur(12px);
-        pointer-events: none;
-        margin: 0 auto -360px auto;
-    }
-
-    .hero-grid {
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .hero-column {
-        display: flex;
-        flex-direction: column;
-        gap: 22px;
-        justify-content: center;
-    }
-
-    .floating-card {
-        width: 100%;
-        padding: 18px 18px 16px 18px;
-        background: rgba(17, 17, 17, 0.92);
-        border: 1px solid rgba(0, 96, 57, 0.7);
-        border-radius: 16px;
-        box-shadow: 0 26px 60px rgba(0, 0, 0, 0.42);
-        backdrop-filter: blur(10px);
-        text-align: left;
-    }
-
-    .floating-kicker {
-        font-size: 0.72rem;
-        font-weight: 800;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--green);
-        margin-bottom: 0.6rem;
-    }
-
-    .floating-title {
-        font-size: 1rem;
-        font-weight: 700;
         color: var(--text);
-        margin-bottom: 0.45rem;
-    }
-
-    .floating-copy {
-        font-size: 0.92rem;
-        line-height: 1.55;
-        color: var(--muted);
-    }
-
-    .hero-stack {
-        max-width: 760px;
-        padding: 0 24px;
-    }
-
-    .hero-title {
-        color: var(--text);
-        font-size: 88px;
-        font-weight: 700;
-        line-height: 1;
         margin: 0;
-        letter-spacing: -2px;
+        line-height: 1;
     }
 
-    .hero-sub {
-        font-size: 22px;
-        text-align: center;
+    .subtitle {
+        font-size: 18px;
         color: #9CA3AF;
+        text-align: center;
         margin-top: 12px;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .cta-wrapper {
+        text-align: center;
+        margin-top: 20px;
+        display: flex;
+        justify-content: center;
+    }
+
+    .cta-wrapper .stButton {
+        display: inline-flex;
+    }
+
+    .card {
+        background: rgba(20,20,20,0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(0,96,57,0.4);
+        border-radius: 16px;
+        padding: 22px;
+        margin-bottom: 28px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    }
+
+    .card-label {
+        color: #006039;
+        font-size: 11px;
+        letter-spacing: 1px;
+    }
+
+    .card-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-top: 6px;
+        color: var(--text);
+    }
+
+    .card-text {
+        color: #B9C7C0;
+        margin-top: 6px;
+        line-height: 1.6;
+    }
+
+    .landing-section {
+        padding: 76px 0;
+    }
+
+    .landing-section.offset {
+        padding-left: clamp(0px, 8vw, 96px);
+    }
+
+    .landing-section.compact {
+        padding-top: 62px;
+    }
+
+    .section-kicker {
+        color: var(--green);
+        font-size: 0.78rem;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        margin-bottom: 18px;
     }
 
     .section-title {
-        font-size: 42px;
-        font-weight: 600;
-        margin: 0 0 20px 0;
+        font-size: clamp(36px, 4vw, 56px);
+        font-weight: 760;
+        line-height: 1.08;
+        margin: 0 0 28px 0;
         color: var(--text);
+        letter-spacing: 0;
     }
 
     .section-text {
+        max-width: 760px;
         font-size: 18px;
         color: #9CA3AF;
-        line-height: 1.8;
+        line-height: 1.85;
     }
 
-    .premium-block {
-        background: linear-gradient(180deg, rgba(17, 17, 17, 0.96) 0%, rgba(10, 10, 10, 0.98) 100%);
-        border: 1px solid var(--line);
-        border-radius: 28px;
-        padding: 52px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    .section-text p {
+        margin: 0 0 1.25rem 0;
     }
 
-    .green-strip {
-        margin-top: 36px;
-        padding-top: 28px;
-        border-top: 1px solid rgba(0, 96, 57, 0.5);
-        color: var(--green);
-        font-size: 0.95rem;
+    .method-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+        gap: clamp(48px, 8vw, 108px);
+        align-items: start;
+    }
+
+    .method-list {
+        display: grid;
+        gap: 24px;
+        margin-top: 8px;
+    }
+
+    .method-item {
+        padding: 0 0 24px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    }
+
+    .method-item:last-child {
+        border-bottom: none;
+    }
+
+    .method-title {
+        color: var(--text);
+        font-size: 1.05rem;
         font-weight: 800;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        line-height: 1.9;
+        margin-bottom: 0.45rem;
+    }
+
+    .method-copy {
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.7;
+    }
+
+    .terms-panel {
+        max-width: 900px;
+        margin-left: auto;
+        padding: 46px 0 0 0;
+        box-shadow: 0 -1px 0 rgba(0, 96, 57, 0.45);
     }
 
     .green {
@@ -452,28 +499,90 @@ st.markdown(
             font-size: 56px;
         }
 
-        .hero {
-            min-height: 460px;
-        }
-
-        .hero-grid {
-            gap: 0;
-        }
-
-        .hero-column {
-            margin-top: 1rem;
-        }
-
-        .hero-stack {
-            padding: 40px 0;
-        }
-
-        .premium-block {
-            padding: 32px 24px;
+        .main-title {
+            font-size: 56px;
         }
 
         .container {
             padding: 40px 16px;
+        }
+
+        .landing-shell {
+            padding: 0 18px 20px 18px;
+        }
+
+        .landing-hero-grid {
+            padding: 52px 0 48px 0;
+        }
+
+        .landing-hero-grid div[data-testid="stHorizontalBlock"] {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 0.75rem;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(.main-title) {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .landing-hero-grid div[data-testid="column"] {
+            min-width: 0;
+            flex: 1 1 0;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(.main-title) > div[data-testid="column"] {
+            min-width: 0;
+            width: auto;
+            flex: 1 1 0;
+        }
+
+        .landing-hero-grid div[data-testid="column"]:nth-child(2) {
+            flex: 2 1 0;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(.main-title) > div[data-testid="column"]:nth-child(2) {
+            flex: 2 1 0;
+        }
+
+        .landing-hero-grid .card {
+            padding: 14px;
+            margin-bottom: 16px;
+            border-radius: 12px;
+        }
+
+        .landing-hero-grid .card-label {
+            font-size: 9px;
+        }
+
+        .landing-hero-grid .card-title {
+            font-size: 13px;
+        }
+
+        .landing-hero-grid .card-text {
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        .landing-section,
+        .landing-section.compact {
+            padding: 64px 0;
+        }
+
+        .landing-section.offset {
+            padding-left: 0;
+        }
+
+        .method-grid {
+            grid-template-columns: 1fr;
+            gap: 36px;
+        }
+
+        .terms-panel {
+            margin-left: 0;
         }
     }
     </style>
@@ -632,121 +741,127 @@ def logo_base64():
         return base64.b64encode(logo_file.read()).decode("utf-8")
 
 
+def card(title, text):
+    return f'''
+    <div class="card">
+        <div class="card-label">{title.upper()}</div>
+        <div class="card-title">{title}</div>
+        <div class="card-text">{text}</div>
+    </div>
+    '''
+
+
 def render_landing_page():
     render_top_nav()
-    st.markdown('<div class="container">', unsafe_allow_html=True)
+    st.markdown('<div class="landing-shell">', unsafe_allow_html=True)
+    st.markdown('<div class="landing-hero-grid">', unsafe_allow_html=True)
     left, center, right = st.columns([1, 2, 1], gap="large")
 
     with left:
-        st.markdown('<div class="hero-column">', unsafe_allow_html=True)
         st.markdown(
-            """
-            <div class="floating-card">
-                <div class="floating-kicker">Intelligence</div>
-                <div class="floating-title">Risk Intelligence</div>
-                <div class="floating-copy">Structured counterparty risk evaluation using deterministic models.</div>
-            </div>
-            """,
+            card(
+                "Risk Intelligence",
+                "Structured counterparty risk evaluation using deterministic models.",
+            ),
             unsafe_allow_html=True,
         )
+        st.markdown("<div style='margin-left:20px;'>", unsafe_allow_html=True)
         st.markdown(
-            """
-            <div class="floating-card">
-                <div class="floating-kicker">Controls</div>
-                <div class="floating-title">Audit Integrity</div>
-                <div class="floating-copy">Every decision is recorded, traceable, and defensible.</div>
-            </div>
-            """,
+            card(
+                "Audit Integrity",
+                "Every decision is recorded, traceable, and defensible.",
+            ),
             unsafe_allow_html=True,
         )
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with center:
+        st.markdown("<h1 class='main-title'>ChaAVON</h1>", unsafe_allow_html=True)
         st.markdown(
-            """
-            <section class="hero">
-                <div class="hero-orb"></div>
-                <div class="hero-stack">
-                    <div class="hero-title">ChaAVON</div>
-                    <div class="hero-sub">Structured intelligence for high-stakes decisions.</div>
-                </div>
-            </section>
-            """,
+            "<div class='subtitle'>Structured intelligence for high-stakes decisions.</div>",
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="cta-wrap">', unsafe_allow_html=True)
-        _, cta_col, _ = st.columns([1.2, 1, 1.2])
-        with cta_col:
-            if st.button("Join Now", key="hero_join", use_container_width=True):
-                go_to("register")
+        st.markdown("<div class='cta-wrapper'>", unsafe_allow_html=True)
+        if st.button("Join Now", key="hero_join"):
+            go_to("register")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown('<div class="hero-column">', unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:30px;'>", unsafe_allow_html=True)
         st.markdown(
-            """
-            <div class="floating-card">
-                <div class="floating-kicker">Exposure</div>
-                <div class="floating-title">Counterparty Controls</div>
-                <div class="floating-copy">Entity matching, jurisdiction exposure, and behavioral risk signals.</div>
-            </div>
-            """,
+            card(
+                "Counterparty Controls",
+                "Entity matching, jurisdiction exposure, and behavioral risk signals.",
+            ),
             unsafe_allow_html=True,
         )
+        st.markdown("</div>", unsafe_allow_html=True)
         st.markdown(
-            """
-            <div class="floating-card">
-                <div class="floating-kicker">Platform</div>
-                <div class="floating-title">Controlled Access</div>
-                <div class="floating-copy">Approval-gated platform with enforced subscription lifecycle.</div>
-            </div>
-            """,
+            card(
+                "Controlled Access",
+                "Approval-gated platform with enforced subscription lifecycle.",
+            ),
             unsafe_allow_html=True,
         )
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown(
+        dedent(
         """
-        <div class="container">
-            <div class="divider"></div>
-            <div class="section-title">What We Do</div>
-            <div class="premium-block">
+            <div class="landing-section offset">
+                <div class="section-kicker">What We Do</div>
+                <div class="section-title">Compliance intelligence built for accountable decisions.</div>
                 <div class="section-text">
-                    <p>ChaAVON provides institutional-grade intelligence infrastructure for maritime compliance, sanctions screening, and counterparty risk analysis.</p>
-                    <p>We replace fragmented workflows with a unified system that enforces verification, standardizes decision-making, and preserves auditability across every interaction.</p>
-                    <p>Each screening output is generated through deterministic scoring models, ensuring consistency, transparency, and repeatability across jurisdictions and datasets.</p>
-                    <p>Our platform is designed for environments where errors are unacceptable, oversight is mandatory, and every decision must be defensible under scrutiny.</p>
+                    <p>ChaAVON provides structured intelligence infrastructure for maritime compliance, sanctions screening, and counterparty risk review. The platform converts fragmented checks into a consistent decision environment for regulated and high-scrutiny work.</p>
+                    <p>It exists to reduce ambiguity where manual review, incomplete records, and inconsistent screening logic create operational and regulatory risk. ChaAVON gives teams a controlled way to evaluate exposure, document outcomes, and preserve the reasoning behind each decision.</p>
+                    <p>The result is not a recommendation layer or a marketing dashboard. It is a disciplined system for producing reviewable compliance outputs when accuracy, traceability, and governance matter.</p>
                 </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    st.markdown(
-        """
-        <div class="container">
-            <div class="divider"></div>
-            <div class="section-title">Execution Guarantees</div>
-            <div class="premium-block">
-                <div class="section-text">
-                    <p>Matching is deterministic. Assignments are produced by explicit scoring logic, not opaque recommendation systems.</p>
-                    <p>Payments are escrow-first. Funds are committed before work begins and released only through verified completion paths.</p>
-                    <p>Execution is dispute-locked. Active disputes suspend resolution, payout, and closure until formally resolved.</p>
-                    <p>Audit trails are immutable. Every action, transition, and decision is recorded and preserved.</p>
-                </div>
-                <div class="green-strip">
-                    ALL ACTIONS ARE LOGGED.<br>
-                    ALL EXECUTION PATHS ARE BOUNDED.<br>
-                    ALL OUTCOMES ARE REVIEWABLE.
+            <div class="landing-section compact">
+                <div class="method-grid">
+                    <div>
+                        <div class="section-kicker">How We Do It</div>
+                        <div class="section-title">Structured review, deterministic logic, defensible records.</div>
+                    </div>
+                    <div class="method-list">
+                        <div class="method-item">
+                            <div class="method-title">Deterministic models</div>
+                            <div class="method-copy">Screening outcomes are produced through explicit scoring logic and defined thresholds, reducing the variance that comes from ad hoc manual interpretation.</div>
+                        </div>
+                        <div class="method-item">
+                            <div class="method-title">Structured outputs</div>
+                            <div class="method-copy">Each result is organized into consistent fields so teams can compare entities, review exposure, and understand the basis for the decision without reconstructing the process.</div>
+                        </div>
+                        <div class="method-item">
+                            <div class="method-title">Auditability</div>
+                            <div class="method-copy">Review activity, screening results, and decision context are preserved in a format designed for oversight, escalation, and post-event review.</div>
+                        </div>
+                        <div class="method-item">
+                            <div class="method-title">Controlled workflows</div>
+                            <div class="method-copy">Access, subscription status, and operational pathways are governed through approval checks so the platform remains bounded to authorized professional use.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <div class="landing-section">
+                <div class="terms-panel">
+                    <div class="section-kicker">Terms</div>
+                    <div class="section-title">Use is professional, controlled, and subject to review.</div>
+                    <div class="section-text">
+                        <p>ChaAVON is provided for lawful business and compliance purposes by approved users. Access may be limited, suspended, or withdrawn when account status, payment status, operational integrity, or compliance concerns require review.</p>
+                        <p>Users remain responsible for the decisions they make from platform outputs. Screening results, risk indicators, and generated reports support professional review, but they do not replace independent judgment, legal advice, or final regulatory determinations.</p>
+                        <p>The platform and its outputs are provided on an as-available basis. ChaAVON does not guarantee that external datasets are complete, current, or error-free, and disclaims liability for commercial, regulatory, reputational, or operational losses arising from reliance on the service.</p>
+                        <p>Users may not copy, resell, scrape, reverse engineer, or redistribute the platform, its interface, models, reports, or data presentation methods without prior written authorization from ChaAVON.</p>
+                    </div>
+                </div>
+            </div>
         """,
+        ).replace("\n        ", "\n").strip().replace("\n", " "),
         unsafe_allow_html=True,
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_registration_page():
