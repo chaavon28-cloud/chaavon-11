@@ -51,7 +51,7 @@ st.markdown(
     html, body, [class*="css"], .stApp {
         background: var(--bg);
         color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "San Francisco", sans-serif;
     }
 
     header[data-testid="stHeader"] {
@@ -60,7 +60,7 @@ st.markdown(
 
     div.block-container {
         max-width: 1200px;
-        padding: 40px 24px;
+        padding: 0 24px 60px 24px;
     }
 
     h1, h2, h3, label, .stMarkdown {
@@ -76,10 +76,10 @@ st.markdown(
         color: var(--muted);
     }
 
-    .main-container {
+    .container {
         max-width: 1200px;
         margin: auto;
-        padding: 40px 24px;
+        padding: 60px 24px;
     }
 
     div[data-testid="stTextInput"] input,
@@ -142,7 +142,7 @@ st.markdown(
     }
 
     .hero {
-        min-height: 520px;
+        min-height: 420px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -152,29 +152,46 @@ st.markdown(
 
     .hero-title {
         color: var(--text);
-        font-size: 80px;
+        font-size: 88px;
         font-weight: 700;
         line-height: 1;
         margin: 0;
         letter-spacing: -2px;
     }
 
-    .hero-subtitle {
+    .hero-sub {
         font-size: 22px;
         text-align: center;
         color: #9CA3AF;
-        margin-top: 10px;
+        margin-top: 12px;
     }
 
-    .hero-subtitle span {
+    .section-title {
+        font-size: 42px;
+        font-weight: 600;
+        margin: 0 0 20px 0;
+        color: var(--text);
+    }
+
+    .section-text {
+        font-size: 18px;
+        color: #9CA3AF;
+        line-height: 1.8;
+    }
+
+    .green {
         color: var(--green);
-        font-weight: 900;
     }
 
     .cta-wrap {
-        margin-top: 40px;
+        margin: 50px auto 0 auto;
         display: flex;
         justify-content: center;
+    }
+
+    .divider {
+        border-top: 1px solid #1F2937;
+        margin: 100px 0;
     }
 
     .panel {
@@ -190,10 +207,6 @@ st.markdown(
         margin: 3rem auto 0 auto;
     }
 
-    .section {
-        margin-top: 120px;
-    }
-
     .report-section {
         min-height: 170px;
         padding: 1.1rem;
@@ -202,7 +215,7 @@ st.markdown(
         background: var(--card);
     }
 
-    .section-title {
+    .report-section .section-title {
         margin: 0 0 0.85rem 0;
         color: var(--text);
         font-size: 1.05rem;
@@ -291,8 +304,8 @@ st.markdown(
             font-size: 56px;
         }
 
-        .section {
-            margin-top: 80px;
+        .container {
+            padding: 40px 16px;
         }
     }
     </style>
@@ -352,34 +365,47 @@ def render_top_nav():
 
 
 def terms_page():
-    st.markdown('<div class="section">', unsafe_allow_html=True)
-    st.markdown("## Terms of Use")
+    st.markdown('<div class="container">', unsafe_allow_html=True)
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Terms of Use</div>', unsafe_allow_html=True)
     st.markdown(
         """
-ChaAVON provides access to maritime intelligence, compliance insights, and risk screening tools ("Services").
+<div class="section-text">
+ChaAVON provides access to compliance intelligence, sanctions screening tools, and structured decision systems (the "Services").<br><br>
 
 By accessing or using the platform, you agree to the following:
+<br><br>
 
 ### 1. Use of Service
-You agree to use the platform only for lawful business purposes. Any misuse, reverse engineering, scraping, or redistribution of data is strictly prohibited.
+You agree to use the Services solely for lawful, professional, and business purposes. Unauthorized use, reverse engineering, data extraction, or redistribution is strictly prohibited.
 
-### 2. Data Accuracy
-All data is provided "as is" without warranties. ChaAVON does not guarantee completeness or accuracy.
+### 2. Data & Accuracy
+All data is provided on an "as is" and "as available" basis. ChaAVON does not guarantee completeness, accuracy, or real-time validity of any data or outputs.
 
-### 3. Subscription Access
-Access is granted only to approved users with active subscriptions. Access automatically expires after the subscription period.
+### 3. Access & Subscription
+Access is granted only to authorized users with valid subscription periods. Access automatically expires upon reaching the defined end date.
 
-### 4. Intellectual Property
-All platform data, models, and outputs remain the property of ChaAVON.
+### 4. Decision Responsibility
+All outputs are informational. You remain solely responsible for decisions made using the platform.
 
-### 5. Liability
-ChaAVON is not liable for any decisions made based on platform outputs.
+### 5. Intellectual Property
+All systems, models, data structures, and outputs remain the exclusive property of ChaAVON.
 
-### 6. Termination
-We reserve the right to revoke access at any time for misuse or violation of terms.
+### 6. Restrictions
+You may not copy or redistribute platform data, build derivative systems, or use outputs for resale or external distribution.
 
-### 7. Updates
-Terms may change at any time. Continued use constitutes acceptance.
+### 7. Liability
+ChaAVON shall not be liable for any direct, indirect, or consequential losses arising from use of the Services.
+
+### 8. Availability
+We do not guarantee uninterrupted or error-free service.
+
+### 9. Termination
+Access may be revoked at any time for violations of these terms.
+
+### 10. Updates
+Terms may be updated at any time. Continued use constitutes acceptance.
+</div>
         """
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -396,10 +422,10 @@ def render_landing_page():
     render_top_nav()
     st.markdown(
         """
-        <div class="main-container">
+        <div class="container">
             <section class="hero">
                 <div class="hero-title">ChaAVON</div>
-                <div class="hero-subtitle">Intelligence, <span>composed.</span></div>
+                <div class="hero-sub">Structured intelligence for high-stakes decisions.</div>
             </section>
         </div>
         """,
@@ -412,6 +438,43 @@ def render_landing_page():
         if st.button("Join Now", key="hero_join", use_container_width=True):
             go_to("register")
     st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        """
+        <div class="container">
+            <div class="divider"></div>
+            <div class="section-title">What We Do</div>
+            <div class="section-text">
+                ChaAVON provides institutional-grade intelligence infrastructure for maritime compliance, sanctions screening, and counterparty risk analysis.<br><br>
+                We replace fragmented workflows with a unified system that enforces verification, standardizes decision-making, and preserves auditability across every interaction.<br><br>
+                Each screening output is generated through deterministic scoring models, ensuring consistency, transparency, and repeatability across jurisdictions and datasets.<br><br>
+                Our platform is designed for environments where errors are unacceptable, oversight is mandatory, and every decision must be defensible under scrutiny.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="container">
+            <div class="divider"></div>
+            <div class="section-title">Execution Guarantees</div>
+            <div class="section-text">
+                Matching is deterministic. Assignments are produced by explicit scoring logic, not opaque recommendation systems.<br><br>
+                Payments are escrow-first. Funds are committed before work begins and released only through verified completion paths.<br><br>
+                Execution is dispute-locked. Active disputes suspend resolution, payout, and closure until formally resolved.<br><br>
+                Audit trails are immutable. Every action, transition, and decision is recorded and preserved.
+            </div>
+            <div class="divider"></div>
+            <div class="section-text green">
+                ALL ACTIONS ARE LOGGED. ALL EXECUTION PATHS ARE BOUNDED. ALL OUTCOMES ARE REVIEWABLE.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     terms_page()
 
 
