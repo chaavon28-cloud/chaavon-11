@@ -20,6 +20,10 @@ ADMIN_EMAILS = [
     "your@email.com",
     "admin@chaavon.local",
 ]
+ADMIN_EMAILS_NORMALIZED = [
+    email.strip().lower()
+    for email in ADMIN_EMAILS
+]
 
 st.set_page_config(
     page_title="ChaAVON — Structured intelligence for high-stakes decisions.",
@@ -786,7 +790,8 @@ def save_user_record(email, payload):
 
 
 def is_admin_user(email):
-    return bool(email and email in ADMIN_EMAILS)
+    normalized_email = (email or "").strip().lower()
+    return bool(normalized_email and normalized_email in ADMIN_EMAILS_NORMALIZED)
 
 
 def get_status_markup():
