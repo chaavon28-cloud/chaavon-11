@@ -695,7 +695,7 @@ def set_page(page):
 
 def set_session_identity(email=None):
     if email:
-        st.query_params["session"] = email
+        st.query_params["session"] = str(email).strip().lower()
     elif "session" in st.query_params:
         del st.query_params["session"]
 
@@ -872,6 +872,8 @@ def sync_access_state():
 
 
 restore_session()
+if st.session_state.authenticated and st.session_state.user_email:
+    set_session_identity(st.session_state.user_email)
 sync_access_state()
 
 requested_page = st.query_params.get("page")
