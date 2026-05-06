@@ -1,8 +1,9 @@
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import bcrypt
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from textwrap import dedent
 import streamlit as st
 from supabase import create_client
@@ -13,6 +14,10 @@ SUPABASE_URL = "https://guqjmtgqaxperzxfsmel.supabase.co"
 SUPABASE_KEY = "sb_publishable_SMWNZub4TscXI1SMEOaOww_HQ3sYELO"
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/URXM2BPFFLHXC"
 LOGO_PATH = "assets/logo.png"
+ADMIN_EMAILS = [
+    "your@email.com",
+    "admin@chaavon.local",
+]
 
 st.set_page_config(
     page_title="ChaAVON — Structured intelligence for high-stakes decisions.",
@@ -685,6 +690,8 @@ if "access_status" not in st.session_state:
     st.session_state.access_status = "pending"
 if "status_notice" not in st.session_state:
     st.session_state.status_notice = ""
+if "dashboard_log_written" not in st.session_state:
+    st.session_state.dashboard_log_written = False
 
 if st.session_state.user_email and not st.session_state.authenticated:
     st.session_state.authenticated = True
@@ -711,6 +718,43 @@ def format_expiry(end_date):
     return expiry.strftime("%Y-%m-%d"), expiry
 
 
+def log_access_event(email, event):
+    if not email:
+        return
+
+    try:
+        supabase.table("access_logs").insert({
+            "email": email,
+            "event": event,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception:
+        pass
+
+
+def get_user_record(email):
+    if not email:
+        return None
+
+    try:
+        response = supabase.table("users_access").select("*").eq("email", email).execute()
+    except Exception:
+        return None
+
+    if response and hasattr(response, "data") and response.data:
+        return response.data[0]
+    return None
+
+
+def save_user_record(email, payload):
+    supabase.table("users_access").update(payload).eq("email", email).execute()
+    return get_user_record(email)
+
+
+def is_admin_user(email):
+    return bool(email and email in ADMIN_EMAILS)
+
+
 def get_status_markup():
     if not st.session_state.authenticated:
         return ""
@@ -734,25 +778,23 @@ def sync_access_state():
     if not user_email:
         return
 
-    try:
-        response = supabase.table("users_access").select("*").eq("email", user_email).execute()
-    except Exception:
-        return
-
-    if not response or not hasattr(response, "data") or not response.data:
+    record = get_user_record(user_email)
+    if not record:
         st.session_state.approved = False
         st.session_state.payment_done = False
         st.session_state.access_status = "expired"
+        st.session_state.user = {}
         if st.session_state.authenticated:
             st.session_state.page = "payment"
         return
 
-    record = response.data[0]
     st.session_state.user = record
     st.session_state.approved = bool(record.get("approved"))
+    st.session_state.user_name = record.get("name") or st.session_state.user_name
+    st.session_state.company_type = record.get("company_type") or st.session_state.company_type
 
     if record.get("end_date"):
-        st.session_state.payment_done = True
+        st.session_state.payment_done = bool(record.get("payment_done", True))
         try:
             end_date = datetime.fromisoformat(str(record["end_date"]).replace("Z", "+00:00"))
             if end_date.tzinfo is None:
@@ -763,6 +805,14 @@ def sync_access_state():
                 st.session_state.payment_done = False
                 st.session_state.access_status = "expired"
                 st.session_state.page = "payment"
+                try:
+                    save_user_record(
+                        user_email,
+                        {"approved": False, "payment_done": False}
+                    )
+                    log_access_event(user_email, "expiry")
+                except Exception:
+                    pass
                 return
         except Exception:
             st.session_state.approved = False
@@ -771,7 +821,7 @@ def sync_access_state():
             st.session_state.page = "payment"
             return
     else:
-        st.session_state.payment_done = False
+        st.session_state.payment_done = bool(record.get("payment_done", False))
         st.session_state.expiry_display = "Not specified"
 
     if st.session_state.approved:
@@ -787,10 +837,8 @@ sync_access_state()
 if st.session_state.authenticated and st.session_state.page != "terms":
     if st.session_state.approved:
         st.session_state.page = "dashboard"
-    elif st.session_state.payment_done:
-        st.session_state.page = "payment"
     else:
-        st.session_state.page = "register"
+        st.session_state.page = "payment"
 
 
 def render_top_nav():
@@ -959,6 +1007,10 @@ def render_landing_page():
                 st.session_state.page = "register"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+        if not st.session_state.authenticated:
+            if st.button("Login", key="login_link", type="secondary"):
+                st.session_state.page = "login"
+                st.rerun()
 
     with right:
         st.markdown("<div style='margin-right:-60px; margin-top:0px;'>", unsafe_allow_html=True)
@@ -1081,29 +1133,44 @@ def render_registration_page():
 
         with st.spinner("Saving registration..."):
             try:
-                existing = supabase.table("users_access").select(
-                    "email, approved, end_date, is_active, expiry_date, start_date"
-                ).eq("email", email).execute()
-                if existing and hasattr(existing, "data") and existing.data:
-                    existing_approved = existing.data[0].get("approved", False)
-                    existing_end_date = existing.data[0].get("end_date")
-                    is_active = existing.data[0].get("is_active", False)
-                    expiry_date = existing.data[0].get("expiry_date")
-                    start_date = existing.data[0].get("start_date")
+                existing = get_user_record(email)
+                if existing and existing.get("password_hash"):
+                    st.error("Email already registered. Please log in.")
+                    st.stop()
+
+                if existing:
+                    existing_approved = existing.get("approved", False)
+                    existing_end_date = existing.get("end_date")
+                    is_active = existing.get("is_active", False)
+                    expiry_date = existing.get("expiry_date")
+                    start_date = existing.get("start_date")
+                    payment_done = bool(existing.get("payment_done", False))
                 else:
                     is_active = False
                     expiry_date = None
                     start_date = None
+                    payment_done = False
+
+                hashed_password = bcrypt.hashpw(
+                    password.encode(),
+                    bcrypt.gensalt()
+                ).decode()
 
                 payload = {
+                    "name": name,
                     "email": email,
+                    "password_hash": hashed_password,
+                    "company_type": company,
                     "is_active": is_active,
                     "expiry_date": expiry_date,
                     "approved": existing_approved,
                     "start_date": start_date,
                     "end_date": existing_end_date,
+                    "payment_done": payment_done,
+                    "last_login": None,
                 }
                 supabase.table("users_access").upsert(payload, on_conflict="email").execute()
+                log_access_event(email, "register")
             except Exception:
                 st.error("Registration could not be saved. Please retry.")
                 st.stop()
@@ -1114,7 +1181,76 @@ def render_registration_page():
         st.session_state.authenticated = True
         st.session_state.payment_done = False
         st.session_state.approved = existing_approved
+        st.session_state.dashboard_log_written = False
         st.session_state.page = "payment"
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_login_page():
+    if st.session_state.authenticated:
+        st.session_state.page = "dashboard" if st.session_state.approved else "payment"
+        st.rerun()
+
+    render_top_nav()
+    st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
+    st.title("Login")
+    st.markdown(
+        '<div class="form-note">Sign in to restore your account session and continue with your access workflow.</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.form("login_form"):
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+
+    if submit:
+        email = email.strip().lower()
+        password = password.strip()
+
+        if not is_valid_email(email):
+            st.error("Enter a valid email address")
+            st.stop()
+        if not password:
+            st.error("Enter your password")
+            st.stop()
+
+        record = get_user_record(email)
+        stored_hash = record.get("password_hash") if record else None
+        if not record or not stored_hash:
+            st.error("Invalid email or password.")
+            st.stop()
+
+        try:
+            valid_password = bcrypt.checkpw(
+                password.encode(),
+                stored_hash.encode()
+            )
+        except Exception:
+            valid_password = False
+
+        if not valid_password:
+            st.error("Invalid email or password.")
+            st.stop()
+
+        try:
+            save_user_record(email, {"last_login": datetime.now(timezone.utc).isoformat()})
+        except Exception:
+            pass
+
+        log_access_event(email, "login")
+        st.session_state.user_email = email
+        st.session_state.user_name = record.get("name") or ""
+        st.session_state.company_type = record.get("company_type") or ""
+        st.session_state.authenticated = True
+        st.session_state.dashboard_log_written = False
+        sync_access_state()
+        if st.session_state.approved:
+            st.session_state.page = "dashboard"
+        else:
+            st.session_state.page = "payment"
         st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -1136,6 +1272,7 @@ def render_payment_page():
 
     if st.button("Pay Now"):
         st.session_state.payment_done = True
+        log_access_event(st.session_state.user_email, "payment_submit")
         st.success("Payment submitted. Access activates after compliance approval.")
         sync_access_state()
         if st.session_state.approved:
@@ -1149,6 +1286,107 @@ def render_payment_page():
         )
 
     st.caption("Access activated after approval")
+
+
+def render_admin_panel():
+    st.markdown("### Admin Controls")
+    st.markdown("Manage approvals, revocations, and subscription extensions.")
+
+    try:
+        response = supabase.table("users_access").select(
+            "name, email, company_type, payment_done, approved, start_date, end_date"
+        ).order("created_at", desc=True).execute()
+        users = response.data or []
+    except Exception:
+        st.error("Admin panel is temporarily unavailable.")
+        return
+
+    if not users:
+        st.info("No users available.")
+        return
+
+    headers = st.columns([1.2, 1.6, 1.1, 0.9, 0.9, 1, 1, 1.6])
+    header_labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
+    for col, label in zip(headers, header_labels):
+        with col:
+            st.markdown(f"**{label}**")
+
+    today = datetime.now(timezone.utc)
+    for idx, record in enumerate(users):
+        row = st.columns([1.2, 1.6, 1.1, 0.9, 0.9, 1, 1, 1.6])
+        with row[0]:
+            st.markdown(record.get("name") or "-")
+        with row[1]:
+            st.markdown(record.get("email") or "-")
+        with row[2]:
+            st.markdown(record.get("company_type") or "-")
+        with row[3]:
+            st.markdown("Yes" if record.get("payment_done") else "No")
+        with row[4]:
+            st.markdown("Yes" if record.get("approved") else "No")
+        with row[5]:
+            st.markdown(record.get("start_date") or "-")
+        with row[6]:
+            st.markdown(record.get("end_date") or "-")
+        with row[7]:
+            action_cols = st.columns(3)
+            email = record.get("email")
+            if action_cols[0].button("Approve", key=f"approve_{idx}"):
+                start_date = today.date().isoformat()
+                end_date = (today + timedelta(days=28)).date().isoformat()
+                try:
+                    updated = save_user_record(email, {
+                        "approved": True,
+                        "payment_done": True,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "is_active": True,
+                    })
+                    if not updated or not updated.get("approved") or str(updated.get("end_date")) != end_date:
+                        st.error(f"Approval update did not persist for {email}. Check Supabase policies.")
+                        return
+                    log_access_event(email, "approval")
+                    if st.session_state.user_email == email:
+                        sync_access_state()
+                    st.rerun()
+                except Exception:
+                    st.error(f"Could not approve {email}.")
+            if action_cols[1].button("Revoke", key=f"revoke_{idx}"):
+                try:
+                    updated = save_user_record(email, {"approved": False, "is_active": False})
+                    if not updated or updated.get("approved") is not False:
+                        st.error(f"Revoke update did not persist for {email}. Check Supabase policies.")
+                        return
+                    log_access_event(email, "revoke")
+                    if st.session_state.user_email == email:
+                        sync_access_state()
+                    st.rerun()
+                except Exception:
+                    st.error(f"Could not revoke {email}.")
+            if action_cols[2].button("Extend 28 Days", key=f"extend_{idx}"):
+                try:
+                    current_end = record.get("end_date")
+                    if current_end:
+                        parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
+                        if parsed_end.tzinfo is None:
+                            parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+                    else:
+                        parsed_end = today
+                    new_end = (parsed_end + timedelta(days=28)).date().isoformat()
+                    updated = save_user_record(email, {
+                        "end_date": new_end,
+                        "approved": True,
+                        "payment_done": True,
+                    })
+                    if not updated or str(updated.get("end_date")) != new_end:
+                        st.error(f"Extension update did not persist for {email}. Check Supabase policies.")
+                        return
+                    log_access_event(email, "extend_28_days")
+                    if st.session_state.user_email == email:
+                        sync_access_state()
+                    st.rerun()
+                except Exception:
+                    st.error(f"Could not extend {email}.")
 
 
 @st.cache_data
@@ -1179,6 +1417,7 @@ def load_data():
 
 
 def dashboard_page():
+    sync_access_state()
     if not st.session_state.approved:
         st.session_state.page = "payment"
         st.session_state.status_notice = "Access approval required."
@@ -1196,6 +1435,7 @@ def dashboard_page():
         st.markdown(f"Valid until: {expiry_display}")
     with top_right:
         if st.button("Logout"):
+            log_access_event(user_email, "logout")
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -1207,6 +1447,13 @@ def dashboard_page():
     <p><b>Expiry:</b> {expiry_display}</p>
     </div>
     """, unsafe_allow_html=True)
+
+    if not st.session_state.dashboard_log_written:
+        log_access_event(user_email, "dashboard_access")
+        st.session_state.dashboard_log_written = True
+
+    if is_admin_user(user_email):
+        render_admin_panel()
 
     st.title("Vessel Sanctions Screening for Crude Cargo")
     st.markdown("Enter a vessel name to screen against the OFAC list.")
@@ -1359,6 +1606,8 @@ def dashboard_page():
 page = st.session_state.page
 if page == "home":
     render_landing_page()
+elif page == "login":
+    render_login_page()
 elif page == "register":
     render_registration_page()
 elif page == "payment":
