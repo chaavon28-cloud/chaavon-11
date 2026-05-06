@@ -112,36 +112,19 @@ st.markdown(
     .stDownloadButton > button,
     .stLinkButton > a {
         background: var(--green);
-        color: black;
+        color: #FFFFFF;
         border: 1px solid var(--green);
-        border-radius: 999px;
+        border-radius: 12px;
         font-weight: 700;
-        padding: 12px 32px;
+        padding: 12px 24px;
     }
 
     .stButton > button:hover,
     .stDownloadButton > button:hover,
     .stLinkButton > a:hover {
-        background: var(--green);
-        border-color: var(--green);
-        color: black;
-    }
-
-    div[data-testid="stButton"] button[kind="secondary"] {
-        background: transparent !important;
-        border: none !important;
-        color: #006039 !important;
-        font-size: 16px !important;
-        padding: 0 !important;
-        min-height: auto !important;
-        line-height: 1.2 !important;
-        box-shadow: none !important;
-    }
-
-    div[data-testid="stButton"] button[kind="secondary"]:hover {
-        background: transparent !important;
-        border: none !important;
-        color: #006039 !important;
+        background: #0b7448;
+        border-color: #0b7448;
+        color: #FFFFFF;
     }
 
     .navbar {
@@ -698,8 +681,58 @@ if st.session_state.user_email and not st.session_state.authenticated:
     st.session_state.authenticated = True
 
 
-def go_to(page):
+def set_page(page):
     st.session_state.page = page
+    if page == "home":
+        clear_route_params()
+    else:
+        st.query_params["page"] = page
+
+
+def set_session_identity(email=None):
+    if email:
+        st.query_params["session"] = email
+    elif "session" in st.query_params:
+        del st.query_params["session"]
+
+
+def clear_route_params():
+    if "page" in st.query_params:
+        del st.query_params["page"]
+
+
+def restore_session():
+    session_email = st.session_state.user_email or st.query_params.get("session")
+    if not session_email:
+        return
+
+    session_email = str(session_email).strip().lower()
+    record = get_user_record(session_email)
+    if not record:
+        st.session_state.authenticated = False
+        st.session_state.user_email = None
+        st.session_state.user = {}
+        st.session_state.approved = False
+        st.session_state.payment_done = False
+        set_session_identity(None)
+        set_page("home")
+        return
+
+    st.session_state.user_email = session_email
+    st.session_state.authenticated = True
+    st.session_state.user = record
+    st.session_state.user_name = record.get("name") or ""
+    st.session_state.company_type = record.get("company_type") or ""
+    st.session_state.approved = bool(record.get("approved"))
+    st.session_state.payment_done = bool(record.get("payment_done", False))
+    _, expiry = format_expiry(record.get("end_date"))
+    st.session_state.expiry_display = expiry.strftime("%Y-%m-%d") if expiry else "Not specified"
+    st.session_state.access_status = "active" if st.session_state.approved else ("pending" if st.session_state.payment_done else "pending")
+    set_session_identity(session_email)
+
+
+def go_to(page):
+    set_page(page)
     st.rerun()
 
 
@@ -786,7 +819,7 @@ def sync_access_state():
         st.session_state.access_status = "expired"
         st.session_state.user = {}
         if st.session_state.authenticated:
-            st.session_state.page = "payment"
+            set_page("payment")
         return
 
     st.session_state.user = record
@@ -805,7 +838,7 @@ def sync_access_state():
                 st.session_state.approved = False
                 st.session_state.payment_done = False
                 st.session_state.access_status = "expired"
-                st.session_state.page = "payment"
+                set_page("payment")
                 try:
                     save_user_record(
                         user_email,
@@ -819,7 +852,7 @@ def sync_access_state():
             st.session_state.approved = False
             st.session_state.payment_done = False
             st.session_state.access_status = "expired"
-            st.session_state.page = "payment"
+            set_page("payment")
             return
     else:
         st.session_state.payment_done = bool(record.get("payment_done", False))
@@ -833,13 +866,15 @@ def sync_access_state():
         st.session_state.access_status = "pending"
 
 
+restore_session()
 sync_access_state()
 
-if st.session_state.authenticated and st.session_state.page != "terms":
-    if st.session_state.approved:
-        st.session_state.page = "dashboard"
-    else:
-        st.session_state.page = "payment"
+requested_page = st.query_params.get("page")
+if requested_page in {"home", "login", "register", "payment", "terms", "dashboard", "admin"}:
+    st.session_state.page = str(requested_page)
+
+if st.session_state.authenticated and st.session_state.page in {"login", "register"}:
+    set_page("dashboard" if st.session_state.approved else "payment")
 
 
 def render_top_nav():
@@ -994,24 +1029,30 @@ def render_landing_page():
         st.markdown("</div>", unsafe_allow_html=True)
 
     with center:
-        button_text = "Go to Dashboard" if st.session_state.authenticated else "Join Now"
         st.markdown("<h1 class='main-title'>ChaAVON</h1>", unsafe_allow_html=True)
         st.markdown(
             "<div class='subtitle'>Structured intelligence for high-stakes decisions.</div>",
             unsafe_allow_html=True,
         )
         st.markdown("<div class='cta-wrapper'>", unsafe_allow_html=True)
-        if st.button(button_text, key="cta_link", type="secondary"):
-            if st.session_state.authenticated:
-                st.session_state.page = "dashboard"
-            else:
-                st.session_state.page = "register"
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-        if not st.session_state.authenticated:
-            if st.button("Login", key="login_link", type="secondary"):
-                st.session_state.page = "login"
+        if st.session_state.authenticated:
+            if st.button("Access Compliance Workspace →", key="workspace_cta"):
+                if st.session_state.approved:
+                    set_page("dashboard")
+                else:
+                    set_page("payment")
                 st.rerun()
+        else:
+            cta_col, login_col = st.columns(2, gap="small")
+            with cta_col:
+                if st.button("Join Now", key="cta_link"):
+                    set_page("register")
+                    st.rerun()
+            with login_col:
+                if st.button("Login", key="login_link"):
+                    set_page("login")
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<div style='margin-right:-60px; margin-top:0px;'>", unsafe_allow_html=True)
@@ -1093,7 +1134,7 @@ def render_landing_page():
 
 def render_registration_page():
     if st.session_state.authenticated:
-        st.session_state.page = "payment"
+        set_page("payment")
         st.rerun()
 
     render_top_nav()
@@ -1182,13 +1223,14 @@ def render_registration_page():
         st.session_state.payment_done = False
         st.session_state.approved = existing_approved
         st.session_state.dashboard_log_written = False
-        st.session_state.page = "payment"
+        set_session_identity(email)
+        set_page("payment")
         st.rerun()
 
 
 def render_login_page():
     if st.session_state.authenticated:
-        st.session_state.page = "dashboard" if st.session_state.approved else "payment"
+        set_page("dashboard" if st.session_state.approved else "payment")
         st.rerun()
 
     render_top_nav()
@@ -1243,17 +1285,18 @@ def render_login_page():
         st.session_state.company_type = record.get("company_type") or ""
         st.session_state.authenticated = True
         st.session_state.dashboard_log_written = False
+        set_session_identity(email)
         sync_access_state()
         if st.session_state.approved:
-            st.session_state.page = "dashboard"
+            set_page("dashboard")
         else:
-            st.session_state.page = "payment"
+            set_page("payment")
         st.rerun()
 
 
 def render_payment_page():
     if st.session_state.approved:
-        st.session_state.page = "dashboard"
+        set_page("dashboard")
         st.rerun()
 
     render_top_nav()
@@ -1279,7 +1322,7 @@ def render_payment_page():
         st.success("Payment submitted. Access activates after compliance approval.")
         sync_access_state()
         if st.session_state.approved:
-            st.session_state.page = "dashboard"
+            set_page("dashboard")
         st.rerun()
 
     if st.session_state.payment_done and not st.session_state.approved:
@@ -1392,6 +1435,18 @@ def render_admin_panel():
                     st.error(f"Could not extend {email}.")
 
 
+def render_admin_page():
+    render_top_nav()
+    if not st.session_state.authenticated:
+        st.error("Unauthorized.")
+        return
+    if not is_admin_user(st.session_state.user_email):
+        st.error("Unauthorized.")
+        return
+
+    render_admin_panel()
+
+
 @st.cache_data
 def load_data():
     import pandas as pd
@@ -1422,7 +1477,7 @@ def load_data():
 def dashboard_page():
     sync_access_state()
     if not st.session_state.approved:
-        st.session_state.page = "payment"
+        set_page("payment")
         st.session_state.status_notice = "Access approval required."
         st.warning("Access approval required.")
         st.rerun()
@@ -1439,6 +1494,8 @@ def dashboard_page():
     with top_right:
         if st.button("Logout"):
             log_access_event(user_email, "logout")
+            set_session_identity(None)
+            clear_route_params()
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -1617,6 +1674,8 @@ elif page == "payment":
     render_payment_page()
 elif page == "terms":
     terms_page()
+elif page == "admin":
+    render_admin_page()
 elif page == "dashboard":
     dashboard_page()
 else:
