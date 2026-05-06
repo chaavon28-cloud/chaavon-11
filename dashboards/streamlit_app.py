@@ -2,7 +2,7 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from textwrap import dedent
 import streamlit as st
 from supabase import create_client
@@ -174,6 +174,25 @@ st.markdown(
         color: var(--text);
     }
 
+    .nav-status {
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-weight: 700;
+    }
+
+    .status-active {
+        color: #006039;
+    }
+
+    .status-pending {
+        color: #d1a646;
+    }
+
+    .status-expired {
+        color: #b65b5b;
+    }
+
     .landing-shell {
         max-width: 1180px;
         margin: 0 auto;
@@ -230,6 +249,16 @@ st.markdown(
     .folder {
         position: relative;
         margin-bottom: 40px;
+        transition: all 0.25s ease;
+    }
+
+    .folder-tilt-a { transform: rotate(-1deg); }
+    .folder-tilt-b { transform: rotate(1.5deg); }
+    .folder-tilt-c { transform: rotate(-2deg); }
+    .folder-tilt-d { transform: rotate(1deg); }
+
+    .folder:hover {
+        transform: translateY(-6px) scale(1.01);
     }
 
     .folder-tab {
@@ -315,6 +344,19 @@ st.markdown(
         display: grid;
         gap: 24px;
         margin-top: 8px;
+    }
+
+    .signal-block {
+        margin-top: 40px;
+        line-height: 2;
+    }
+
+    .signal-block div {
+        color: #006039;
+        font-size: 13px;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        opacity: 0.9;
     }
 
     .method-item {
@@ -621,27 +663,35 @@ st.markdown(
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-for key, default in {
-    "page": "home",
-    "authenticated": False,
-    "user_email": "",
-    "user_name": "",
-    "company_type": "",
-    "user": {},
-    "expiry_display": "Not specified",
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
+if "payment_done" not in st.session_state:
+    st.session_state.payment_done = False
+if "approved" not in st.session_state:
+    st.session_state.approved = False
+if "user_name" not in st.session_state:
+    st.session_state.user_name = ""
+if "company_type" not in st.session_state:
+    st.session_state.company_type = ""
+if "user" not in st.session_state:
+    st.session_state.user = {}
+if "expiry_display" not in st.session_state:
+    st.session_state.expiry_display = "Not specified"
+if "access_status" not in st.session_state:
+    st.session_state.access_status = "pending"
+if "status_notice" not in st.session_state:
+    st.session_state.status_notice = ""
 
-allowed_pages = {"home", "register", "payment", "access", "terms", "app"}
-page_param = st.query_params.get("page")
-if page_param in allowed_pages and st.session_state.page != page_param:
-    st.session_state.page = page_param
+if st.session_state.user_email and not st.session_state.authenticated:
+    st.session_state.authenticated = True
 
 
 def go_to(page):
     st.session_state.page = page
-    st.query_params["page"] = page
     st.rerun()
 
 
@@ -661,14 +711,98 @@ def format_expiry(end_date):
     return expiry.strftime("%Y-%m-%d"), expiry
 
 
+def get_status_markup():
+    if not st.session_state.authenticated:
+        return ""
+
+    status = st.session_state.access_status
+    label_map = {
+        "active": "● ACCESS ACTIVE",
+        "pending": "● APPROVAL PENDING",
+        "expired": "● ACCESS EXPIRED",
+    }
+    class_map = {
+        "active": "status-active",
+        "pending": "status-pending",
+        "expired": "status-expired",
+    }
+    return f'<div class="nav-status {class_map.get(status, "status-pending")}">{label_map.get(status, "● APPROVAL PENDING")}</div>'
+
+
+def sync_access_state():
+    user_email = st.session_state.user_email
+    if not user_email:
+        return
+
+    try:
+        response = supabase.table("users_access").select("*").eq("email", user_email).execute()
+    except Exception:
+        return
+
+    if not response or not hasattr(response, "data") or not response.data:
+        st.session_state.approved = False
+        st.session_state.payment_done = False
+        st.session_state.access_status = "expired"
+        if st.session_state.authenticated:
+            st.session_state.page = "payment"
+        return
+
+    record = response.data[0]
+    st.session_state.user = record
+    st.session_state.approved = bool(record.get("approved"))
+
+    if record.get("end_date"):
+        st.session_state.payment_done = True
+        try:
+            end_date = datetime.fromisoformat(str(record["end_date"]).replace("Z", "+00:00"))
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            st.session_state.expiry_display = end_date.astimezone(timezone.utc).strftime("%Y-%m-%d")
+            if end_date < datetime.now(timezone.utc):
+                st.session_state.approved = False
+                st.session_state.payment_done = False
+                st.session_state.access_status = "expired"
+                st.session_state.page = "payment"
+                return
+        except Exception:
+            st.session_state.approved = False
+            st.session_state.payment_done = False
+            st.session_state.access_status = "expired"
+            st.session_state.page = "payment"
+            return
+    else:
+        st.session_state.payment_done = False
+        st.session_state.expiry_display = "Not specified"
+
+    if st.session_state.approved:
+        st.session_state.access_status = "active"
+    elif st.session_state.payment_done:
+        st.session_state.access_status = "pending"
+    else:
+        st.session_state.access_status = "pending"
+
+
+sync_access_state()
+
+if st.session_state.authenticated and st.session_state.page != "terms":
+    if st.session_state.approved:
+        st.session_state.page = "dashboard"
+    elif st.session_state.payment_done:
+        st.session_state.page = "payment"
+    else:
+        st.session_state.page = "register"
+
+
 def render_top_nav():
+    status_markup = get_status_markup()
     st.markdown(
         f"""
         <div class="navbar">
-            <a class="brand-link" href="?page=home">
+            <div class="brand-link">
                 <img class="logo" src="data:image/png;base64,{logo_base64()}" />
                 <div class="brand">ChaAVON</div>
-            </a>
+            </div>
+            {status_markup}
         </div>
         """,
         unsafe_allow_html=True,
@@ -770,9 +904,9 @@ def logo_base64():
         return base64.b64encode(logo_file.read()).decode("utf-8")
 
 
-def folder(title, text):
+def folder(title, text, extra_class=""):
     return f"""
-    <div class="folder">
+    <div class="folder {extra_class}">
         <div class="folder-tab"></div>
         <div class="folder-body">
             <div class="folder-title">{title}</div>
@@ -789,53 +923,64 @@ def render_landing_page():
     left, center, right = st.columns([1, 2, 1], gap="large")
 
     with left:
+        st.markdown("<div style='margin-left:-60px; margin-top:20px;'>", unsafe_allow_html=True)
         st.markdown(
             folder(
                 "Risk Intelligence",
                 "Structured counterparty risk evaluation using deterministic models.",
+                "folder-tilt-a",
             ),
             unsafe_allow_html=True,
         )
-        st.markdown("<div style='margin-left:50px;'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-left:40px; margin-top:60px;'>", unsafe_allow_html=True)
         st.markdown(
             folder(
                 "Audit Integrity",
                 "Every decision is recorded, traceable, and defensible.",
+                "folder-tilt-b",
             ),
             unsafe_allow_html=True,
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
     with center:
+        button_text = "Go to Dashboard" if st.session_state.authenticated else "Join Now"
         st.markdown("<h1 class='main-title'>ChaAVON</h1>", unsafe_allow_html=True)
         st.markdown(
             "<div class='subtitle'>Structured intelligence for high-stakes decisions.</div>",
             unsafe_allow_html=True,
         )
         st.markdown("<div class='cta-wrapper'>", unsafe_allow_html=True)
-        if st.button("Join Now →", key="cta_link", type="secondary"):
-            st.session_state.page = "register"
-            st.query_params["page"] = "register"
+        if st.button(button_text, key="cta_link", type="secondary"):
+            if st.session_state.authenticated:
+                st.session_state.page = "dashboard"
+            else:
+                st.session_state.page = "register"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
-        st.markdown("<div style='margin-top:60px;'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-right:-60px; margin-top:0px;'>", unsafe_allow_html=True)
         st.markdown(
             folder(
                 "Counterparty Controls",
                 "Entity matching, jurisdiction exposure, and behavioral risk signals.",
+                "folder-tilt-c",
             ),
             unsafe_allow_html=True,
         )
         st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:80px;'>", unsafe_allow_html=True)
         st.markdown(
             folder(
                 "Controlled Access",
                 "Approval-gated platform with enforced subscription lifecycle.",
+                "folder-tilt-d",
             ),
             unsafe_allow_html=True,
         )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown(
@@ -856,23 +1001,19 @@ def render_landing_page():
                     <div>
                         <div class="section-kicker">How We Do It</div>
                         <div class="section-title">Structured review, deterministic logic, defensible records.</div>
+                        <div class="signal-block">
+                            <div>Deterministic models</div>
+                            <div>Structured outputs</div>
+                            <div>Auditability</div>
+                            <div>Controlled workflows</div>
+                        </div>
                     </div>
                     <div class="method-list">
-                        <div class="method-item">
-                            <div class="method-title">Deterministic models</div>
-                            <div class="method-copy">Screening outcomes are produced through explicit scoring logic and defined thresholds, reducing the variance that comes from ad hoc manual interpretation.</div>
-                        </div>
-                        <div class="method-item">
-                            <div class="method-title">Structured outputs</div>
-                            <div class="method-copy">Each result is organized into consistent fields so teams can compare entities, review exposure, and understand the basis for the decision without reconstructing the process.</div>
-                        </div>
-                        <div class="method-item">
-                            <div class="method-title">Auditability</div>
-                            <div class="method-copy">Review activity, screening results, and decision context are preserved in a format designed for oversight, escalation, and post-event review.</div>
-                        </div>
-                        <div class="method-item">
-                            <div class="method-title">Controlled workflows</div>
-                            <div class="method-copy">Access, subscription status, and operational pathways are governed through approval checks so the platform remains bounded to authorized professional use.</div>
+                        <div class="section-text">
+                            <p>Screening outcomes are produced through explicit scoring logic and defined thresholds, reducing the variance that comes from ad hoc manual interpretation.</p>
+                            <p>Each result is organized into consistent fields so teams can compare entities, review exposure, and understand the basis for the decision without reconstructing the process.</p>
+                            <p>Review activity, screening results, and decision context are preserved in a format designed for oversight, escalation, and post-event review.</p>
+                            <p>Access, subscription status, and operational pathways are governed through approval checks so the platform remains bounded to authorized professional use.</p>
                         </div>
                     </div>
                 </div>
@@ -898,6 +1039,10 @@ def render_landing_page():
 
 
 def render_registration_page():
+    if st.session_state.authenticated:
+        st.session_state.page = "payment"
+        st.rerun()
+
     render_top_nav()
     st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
     st.title("Request Access")
@@ -905,15 +1050,18 @@ def render_registration_page():
         '<div class="form-note">Submit your registration details to request controlled platform access. Access is reviewed manually and activated only after approval.</div>',
         unsafe_allow_html=True,
     )
-    name = st.text_input("Full Name", value=st.session_state.get("user_name", ""))
-    email = st.text_input("Email", value=st.session_state.get("user_email", ""))
-    password = st.text_input("Password", type="password")
-    company_options = ["Trading Firm", "Broker", "Bank", "Other"]
+    company_options = ["Trading Firm", "Broker", "Other"]
     default_company = st.session_state.get("company_type", company_options[0])
     company_index = company_options.index(default_company) if default_company in company_options else 0
-    company = st.selectbox("Company Type", company_options, index=company_index)
 
-    if st.button("Continue"):
+    with st.form("register_form"):
+        name = st.text_input("Full Name", value=st.session_state.get("user_name", ""))
+        email = st.text_input("Email", value=st.session_state.get("user_email") or "")
+        password = st.text_input("Password", type="password")
+        company = st.selectbox("Company Type", company_options, index=company_index)
+        submit = st.form_submit_button("Continue")
+
+    if submit:
         name = name.strip()
         email = email.strip().lower()
         password = password.strip()
@@ -947,7 +1095,6 @@ def render_registration_page():
                     expiry_date = None
                     start_date = None
 
-                # The live users_access table currently supports access fields only.
                 payload = {
                     "email": email,
                     "is_active": is_active,
@@ -964,75 +1111,44 @@ def render_registration_page():
         st.session_state.user_name = name
         st.session_state.user_email = email
         st.session_state.company_type = company
-        go_to("payment")
+        st.session_state.authenticated = True
+        st.session_state.payment_done = False
+        st.session_state.approved = existing_approved
+        st.session_state.page = "payment"
+        st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_payment_page():
+    if st.session_state.approved:
+        st.session_state.page = "dashboard"
+        st.rerun()
+
     render_top_nav()
-    st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
-    st.title("Subscription Access")
-    st.markdown(
-        """
-        <p><strong>Plan:</strong> Vessel Sanctions Intelligence Platform</p>
-        <p><strong>Price:</strong> $1198 USD / month</p>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.link_button("Pay Now", PAYPAL_URL)
-    st.markdown("Access activated after approval")
+    st.markdown("## Subscription Access")
+    st.markdown("Plan: Vessel Sanctions Intelligence Platform")
+    st.markdown("Price: $1198 USD / month")
 
-    if st.button("I Have Paid"):
-        go_to("access")
+    if st.session_state.status_notice:
+        st.warning(st.session_state.status_notice)
+        st.session_state.status_notice = ""
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    if st.button("Pay Now"):
+        st.session_state.payment_done = True
+        st.success("Payment submitted. Access activates after compliance approval.")
+        sync_access_state()
+        if st.session_state.approved:
+            st.session_state.page = "dashboard"
+            st.rerun()
 
+    if st.session_state.payment_done and not st.session_state.approved:
+        st.info(
+            "Your account is awaiting approval. "
+            "Access is activated manually after review."
+        )
 
-def render_access_check_page():
-    render_top_nav()
-    st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
-    st.title("Access Check")
-    user_email = st.text_input("Email", value=st.session_state.get("user_email", ""))
-
-    if st.button("Check Access"):
-        user_email = user_email.strip().lower()
-
-        if not is_valid_email(user_email):
-            st.error("Enter a valid email address")
-            st.stop()
-
-        with st.spinner("Validating access..."):
-            try:
-                response = supabase.table("users_access").select("*").eq("email", user_email).execute()
-            except Exception:
-                st.error("System temporarily unavailable. Try again shortly.")
-                st.stop()
-
-        if not response or not hasattr(response, "data") or not response.data:
-            st.warning("Access pending approval")
-            st.stop()
-
-        user = response.data[0]
-        approved = user.get("approved", False)
-        end_date = user.get("end_date", None)
-        expiry_display, expiry = format_expiry(end_date)
-
-        if expiry_display is None:
-            st.warning("Access pending approval")
-            st.stop()
-
-        if approved and expiry >= datetime.utcnow():
-            st.session_state.user_email = user_email
-            st.session_state.user = user
-            st.session_state.expiry_display = expiry_display
-            st.session_state.authenticated = True
-            go_to("app")
-
-        st.warning("Access pending approval")
-        st.markdown(f"Valid until: {expiry_display}")
-
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.caption("Access activated after approval")
 
 
 @st.cache_data
@@ -1062,11 +1178,12 @@ def load_data():
     return sanctions_df["clean_name"].tolist()
 
 
-def render_main_app():
-    if not st.session_state.get("authenticated"):
-        st.session_state.page = "home"
-        st.query_params["page"] = "home"
-        st.stop()
+def dashboard_page():
+    if not st.session_state.approved:
+        st.session_state.page = "payment"
+        st.session_state.status_notice = "Access approval required."
+        st.warning("Access approval required.")
+        st.rerun()
 
     user_email = st.session_state.user_email
     user = st.session_state.user
@@ -1074,12 +1191,13 @@ def render_main_app():
 
     top_left, top_mid, top_right = st.columns([3, 2, 1])
     with top_left:
-        st.success(f"Access granted for {user_email}")
+        st.success("Access Granted")
     with top_mid:
         st.markdown(f"Valid until: {expiry_display}")
     with top_right:
         if st.button("Logout"):
-            st.session_state.clear()
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.rerun()
 
     st.markdown(f"""
@@ -1245,16 +1363,12 @@ elif page == "register":
     render_registration_page()
 elif page == "payment":
     render_payment_page()
-elif page == "access":
-    render_access_check_page()
 elif page == "terms":
     terms_page()
-elif page == "app":
-    render_main_app()
+elif page == "dashboard":
+    dashboard_page()
 else:
-    st.session_state.page = "home"
-    st.query_params["page"] = "home"
-    st.rerun()
+    render_landing_page()
 
-if st.session_state.page != "app":
+if st.session_state.page != "dashboard":
     render_footer()
