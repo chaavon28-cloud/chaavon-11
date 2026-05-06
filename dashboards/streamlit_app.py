@@ -1381,7 +1381,7 @@ def render_admin_panel():
                     if not updated or str(updated.get("end_date")) != new_end:
                         st.error(f"Extension update did not persist for {email}. Check Supabase policies.")
                         return
-                    log_access_event(email, "extend_28_days")
+                    log_access_event(email, "extend_access")
                     if st.session_state.user_email == email:
                         sync_access_state()
                     st.rerun()
