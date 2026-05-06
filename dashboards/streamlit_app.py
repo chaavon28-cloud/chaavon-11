@@ -2,10 +2,12 @@ import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import bcrypt
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from textwrap import dedent
 import streamlit as st
+from streamlit_cookies_manager import EncryptedCookieManager
 from supabase import create_client
 from src.screening import clean_name, match_name, calculate_risk
 from src.pdf_generator import generate_pdf
@@ -24,6 +26,8 @@ ADMIN_EMAILS_NORMALIZED = [
     email.strip().lower()
     for email in ADMIN_EMAILS
 ]
+AUTH_COOKIE_NAME = "chaavon_auth_session"
+AUTH_COOKIE_TTL_DAYS = 30
 
 st.set_page_config(
     page_title="ChaAVON — Structured intelligence for high-stakes decisions.",
@@ -31,6 +35,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+cookie_manager = EncryptedCookieManager(
+    prefix="chaavon_prod/",
+    password=f"{SUPABASE_KEY}:chaavon-auth-v1",
+)
+
+if not cookie_manager.ready():
+    st.stop()
 
 st.markdown(
     """
@@ -681,9 +693,6 @@ if "status_notice" not in st.session_state:
 if "dashboard_log_written" not in st.session_state:
     st.session_state.dashboard_log_written = False
 
-if st.session_state.user_email and not st.session_state.authenticated:
-    st.session_state.authenticated = True
-
 
 def set_page(page):
     st.session_state.page = page
@@ -693,32 +702,99 @@ def set_page(page):
         st.query_params["page"] = page
 
 
-def set_session_identity(email=None):
-    if email:
-        st.query_params["session"] = str(email).strip().lower()
-    elif "session" in st.query_params:
-        del st.query_params["session"]
-
-
 def clear_route_params():
     if "page" in st.query_params:
         del st.query_params["page"]
 
 
+def parse_timestamp(value):
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def auth_session_payload():
+    raw = cookie_manager.get(AUTH_COOKIE_NAME)
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+        expires_at = parse_timestamp(payload.get("expires_at"))
+        if not expires_at or expires_at < datetime.now(timezone.utc):
+            clear_auth_session()
+            return None
+        return payload
+    except Exception:
+        clear_auth_session()
+        return None
+
+
+def persist_auth_session(email, issued_at):
+    payload = {
+        "email": str(email).strip().lower(),
+        "issued_at": issued_at,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=AUTH_COOKIE_TTL_DAYS)).isoformat(),
+    }
+    cookie_manager[AUTH_COOKIE_NAME] = json.dumps(payload)
+    cookie_manager.save()
+
+
+def clear_auth_session():
+    if AUTH_COOKIE_NAME in cookie_manager:
+        del cookie_manager[AUTH_COOKIE_NAME]
+        cookie_manager.save()
+
+
+def reset_auth_state():
+    st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.session_state.payment_done = False
+    st.session_state.approved = False
+    st.session_state.user_name = ""
+    st.session_state.company_type = ""
+    st.session_state.user = {}
+    st.session_state.expiry_display = "Not specified"
+    st.session_state.access_status = "pending"
+    st.session_state.dashboard_log_written = False
+
+
 def restore_session():
-    session_email = st.session_state.user_email or st.query_params.get("session")
-    if not session_email:
+    payload = auth_session_payload()
+    if not payload:
         return
 
-    session_email = str(session_email).strip().lower()
+    session_email = str(payload.get("email", "")).strip().lower()
+    issued_at = payload.get("issued_at")
+    if not session_email or not issued_at:
+        clear_auth_session()
+        return
+
     record = get_user_record(session_email)
     if not record:
-        st.session_state.authenticated = False
-        st.session_state.user_email = None
-        st.session_state.user = {}
-        st.session_state.approved = False
-        st.session_state.payment_done = False
-        set_session_identity(None)
+        reset_auth_state()
+        clear_auth_session()
+        set_page("home")
+        return
+
+    record_last_login = record.get("last_login")
+    if not record_last_login:
+        reset_auth_state()
+        clear_auth_session()
+        set_page("home")
+        return
+
+    try:
+        if parse_timestamp(record_last_login) != parse_timestamp(issued_at):
+            reset_auth_state()
+            clear_auth_session()
+            set_page("home")
+            return
+    except Exception:
+        reset_auth_state()
+        clear_auth_session()
         set_page("home")
         return
 
@@ -732,7 +808,6 @@ def restore_session():
     _, expiry = format_expiry(record.get("end_date"))
     st.session_state.expiry_display = expiry.strftime("%Y-%m-%d") if expiry else "Not specified"
     st.session_state.access_status = "active" if st.session_state.approved else ("pending" if st.session_state.payment_done else "pending")
-    set_session_identity(session_email)
 
 
 def go_to(page):
@@ -872,8 +947,6 @@ def sync_access_state():
 
 
 restore_session()
-if st.session_state.authenticated and st.session_state.user_email:
-    set_session_identity(st.session_state.user_email)
 sync_access_state()
 
 requested_page = st.query_params.get("page")
@@ -1165,6 +1238,7 @@ def render_registration_page():
         name = name.strip()
         email = email.strip().lower()
         password = password.strip()
+        issued_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
         if not name:
             st.error("Enter your full name")
@@ -1215,7 +1289,7 @@ def render_registration_page():
                     "start_date": start_date,
                     "end_date": existing_end_date,
                     "payment_done": payment_done,
-                    "last_login": None,
+                    "last_login": issued_at,
                 }
                 supabase.table("users_access").upsert(payload, on_conflict="email").execute()
                 log_access_event(email, "register")
@@ -1230,7 +1304,7 @@ def render_registration_page():
         st.session_state.payment_done = False
         st.session_state.approved = existing_approved
         st.session_state.dashboard_log_written = False
-        set_session_identity(email)
+        persist_auth_session(email, issued_at)
         set_page("payment")
         st.rerun()
 
@@ -1255,6 +1329,7 @@ def render_login_page():
     if submit:
         email = email.strip().lower()
         password = password.strip()
+        issued_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
         if not is_valid_email(email):
             st.error("Enter a valid email address")
@@ -1282,7 +1357,7 @@ def render_login_page():
             st.stop()
 
         try:
-            save_user_record(email, {"last_login": datetime.now(timezone.utc).isoformat()})
+            save_user_record(email, {"last_login": issued_at})
         except Exception:
             pass
 
@@ -1292,7 +1367,7 @@ def render_login_page():
         st.session_state.company_type = record.get("company_type") or ""
         st.session_state.authenticated = True
         st.session_state.dashboard_log_written = False
-        set_session_identity(email)
+        persist_auth_session(email, issued_at)
         sync_access_state()
         if st.session_state.approved:
             set_page("dashboard")
@@ -1501,7 +1576,11 @@ def dashboard_page():
     with top_right:
         if st.button("Logout"):
             log_access_event(user_email, "logout")
-            set_session_identity(None)
+            try:
+                save_user_record(user_email, {"last_login": None})
+            except Exception:
+                pass
+            clear_auth_session()
             clear_route_params()
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
