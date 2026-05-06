@@ -16,6 +16,7 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/URXM2BPFFLHXC"
 PAYMENT_URL = PAYPAL_URL
 LOGO_PATH = "assets/logo.png"
 ADMIN_EMAILS = [
+    "chaavon28@gmail.com",
     "your@email.com",
     "admin@chaavon.local",
 ]
@@ -113,17 +114,16 @@ st.markdown(
     .stLinkButton > a {
         background: var(--green);
         color: #FFFFFF;
-        border: 1px solid var(--green);
+        border: none;
         border-radius: 12px;
-        font-weight: 700;
-        padding: 12px 24px;
+        font-weight: 600;
+        padding: 12px 26px;
     }
 
     .stButton > button:hover,
     .stDownloadButton > button:hover,
     .stLinkButton > a:hover {
         background: #0b7448;
-        border-color: #0b7448;
         color: #FFFFFF;
     }
 
@@ -1036,7 +1036,7 @@ def render_landing_page():
         )
         st.markdown("<div class='cta-wrapper'>", unsafe_allow_html=True)
         if st.session_state.authenticated:
-            if st.button("Access Compliance Workspace →", key="workspace_cta"):
+            if st.button("Enter Intelligence Workspace →", key="workspace_cta"):
                 if st.session_state.approved:
                     set_page("dashboard")
                 else:
