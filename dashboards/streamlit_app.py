@@ -13,6 +13,7 @@ from src.pdf_generator import generate_pdf
 SUPABASE_URL = "https://guqjmtgqaxperzxfsmel.supabase.co"
 SUPABASE_KEY = "sb_publishable_SMWNZub4TscXI1SMEOaOww_HQ3sYELO"
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/URXM2BPFFLHXC"
+PAYMENT_URL = PAYPAL_URL
 LOGO_PATH = "assets/logo.png"
 ADMIN_EMAILS = [
     "your@email.com",
@@ -1096,7 +1097,6 @@ def render_registration_page():
         st.rerun()
 
     render_top_nav()
-    st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
     st.title("Request Access")
     st.markdown(
         '<div class="form-note">Submit your registration details to request controlled platform access. Access is reviewed manually and activated only after approval.</div>',
@@ -1185,8 +1185,6 @@ def render_registration_page():
         st.session_state.page = "payment"
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
 
 def render_login_page():
     if st.session_state.authenticated:
@@ -1194,7 +1192,6 @@ def render_login_page():
         st.rerun()
 
     render_top_nav()
-    st.markdown('<div class="compact-panel panel">', unsafe_allow_html=True)
     st.title("Login")
     st.markdown(
         '<div class="form-note">Sign in to restore your account session and continue with your access workflow.</div>',
@@ -1253,8 +1250,6 @@ def render_login_page():
             st.session_state.page = "payment"
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
 
 def render_payment_page():
     if st.session_state.approved:
@@ -1270,14 +1265,22 @@ def render_payment_page():
         st.warning(st.session_state.status_notice)
         st.session_state.status_notice = ""
 
-    if st.button("Pay Now"):
+    st.link_button("Pay Now", PAYMENT_URL, use_container_width=False)
+    st.caption("After completing payment, return and click: \"I Completed Payment\"")
+
+    if st.button("I Completed Payment"):
+        try:
+            save_user_record(st.session_state.user_email, {"payment_done": True})
+        except Exception:
+            st.error("Payment confirmation could not be saved. Please retry.")
+            st.stop()
         st.session_state.payment_done = True
         log_access_event(st.session_state.user_email, "payment_submit")
         st.success("Payment submitted. Access activates after compliance approval.")
         sync_access_state()
         if st.session_state.approved:
             st.session_state.page = "dashboard"
-            st.rerun()
+        st.rerun()
 
     if st.session_state.payment_done and not st.session_state.approved:
         st.info(
