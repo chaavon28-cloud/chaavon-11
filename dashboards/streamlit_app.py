@@ -17,16 +17,9 @@ SUPABASE_KEY = "sb_publishable_SMWNZub4TscXI1SMEOaOww_HQ3sYELO"
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/URXM2BPFFLHXC"
 PAYMENT_URL = PAYPAL_URL
 LOGO_PATH = "assets/logo.png"
-ADMIN_EMAILS = [
-    "chaavon28@gmail.com",
-    "your@email.com",
-    "admin@chaavon.local",
-]
-ADMIN_EMAILS_NORMALIZED = [
-    email.strip().lower()
-    for email in ADMIN_EMAILS
-]
+ADMIN_ACCESS_HASH = "$2b$12$Pq7uISXnhxLocZunA1i0M.BPE9YcMGGQC37anS0wl1qQRC2QQQfp2"
 AUTH_COOKIE_NAME = "chaavon_auth_session"
+ADMIN_COOKIE_NAME = "chaavon_admin_session"
 AUTH_COOKIE_TTL_DAYS = 30
 
 st.set_page_config(
@@ -672,6 +665,8 @@ if "page" not in st.session_state:
     st.session_state.page = "home"
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "admin_authenticated" not in st.session_state:
+    st.session_state.admin_authenticated = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 if "payment_done" not in st.session_state:
@@ -746,6 +741,36 @@ def clear_auth_session():
     if AUTH_COOKIE_NAME in cookie_manager:
         del cookie_manager[AUTH_COOKIE_NAME]
         cookie_manager.save()
+
+
+def persist_admin_session():
+    payload = {
+        "admin_authenticated": True,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=AUTH_COOKIE_TTL_DAYS)).isoformat(),
+    }
+    cookie_manager[ADMIN_COOKIE_NAME] = json.dumps(payload)
+    cookie_manager.save()
+
+
+def clear_admin_session():
+    if ADMIN_COOKIE_NAME in cookie_manager:
+        del cookie_manager[ADMIN_COOKIE_NAME]
+        cookie_manager.save()
+
+
+def restore_admin_session():
+    raw = cookie_manager.get(ADMIN_COOKIE_NAME)
+    if not raw:
+        return
+    try:
+        payload = json.loads(raw)
+        expires_at = parse_timestamp(payload.get("expires_at"))
+        if expires_at and expires_at > datetime.now(timezone.utc):
+            st.session_state.admin_authenticated = True
+        else:
+            clear_admin_session()
+    except Exception:
+        clear_admin_session()
 
 
 def reset_auth_state():
@@ -864,11 +889,6 @@ def save_user_record(email, payload):
     return get_user_record(email)
 
 
-def is_admin_user(email):
-    normalized_email = (email or "").strip().lower()
-    return bool(normalized_email and normalized_email in ADMIN_EMAILS_NORMALIZED)
-
-
 def get_status_markup():
     if not st.session_state.authenticated:
         return ""
@@ -947,6 +967,7 @@ def sync_access_state():
 
 
 restore_session()
+restore_admin_session()
 sync_access_state()
 
 requested_page = st.query_params.get("page")
@@ -1420,6 +1441,11 @@ def render_admin_panel():
     st.markdown("### Admin Controls")
     st.markdown("Manage approvals, revocations, and subscription extensions.")
 
+    if st.button("Logout Admin Session", key="admin_logout_btn"):
+        st.session_state.admin_authenticated = False
+        clear_admin_session()
+        st.rerun()
+
     try:
         response = supabase.table("users_access").select(
             "name, email, company_type, payment_done, approved, start_date, end_date"
@@ -1519,11 +1545,25 @@ def render_admin_panel():
 
 def render_admin_page():
     render_top_nav()
-    if not st.session_state.authenticated:
-        st.error("Unauthorized.")
-        return
-    if not is_admin_user(st.session_state.user_email):
-        st.error("Unauthorized.")
+
+    if not st.session_state.admin_authenticated:
+        st.markdown('<div class="compact-panel">', unsafe_allow_html=True)
+        st.title("Administrative Access")
+        st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0;">Authorized operational access only.</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height: 24px;"></div>', unsafe_allow_html=True)
+
+        with st.form("admin_gate_form"):
+            entered_pw = st.text_input("Enter Administrative Access Key", type="password")
+            submit = st.form_submit_button("Access Control Panel")
+
+            if submit:
+                if bcrypt.checkpw(entered_pw.encode(), ADMIN_ACCESS_HASH.encode()):
+                    st.session_state.admin_authenticated = True
+                    persist_admin_session()
+                    st.rerun()
+                else:
+                    st.error("Invalid access key.")
+        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     render_admin_panel()
@@ -1598,7 +1638,7 @@ def dashboard_page():
         log_access_event(user_email, "dashboard_access")
         st.session_state.dashboard_log_written = True
 
-    if is_admin_user(user_email):
+    if st.session_state.admin_authenticated:
         render_admin_panel()
 
     st.title("Vessel Sanctions Screening for Crude Cargo")
