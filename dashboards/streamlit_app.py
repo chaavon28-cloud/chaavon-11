@@ -560,6 +560,61 @@ st.markdown(
         from { width: 0%; }
     }
 
+    .admin-container {
+        background: #0B0B0B;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        margin-top: 24px;
+        overflow-x: auto;
+    }
+
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1000px;
+    }
+
+    .admin-table th {
+        text-align: left;
+        padding: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-weight: 700;
+    }
+
+    .admin-table td {
+        padding: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        vertical-align: middle;
+        font-size: 14px;
+        color: var(--text);
+    }
+
+    .admin-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .admin-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .admin-actions .stButton > button {
+        padding: 6px 14px;
+        font-size: 13px;
+        border-radius: 8px;
+        min-height: auto;
+        width: auto;
+    }
+
+    .admin-actions .stButton {
+        width: auto;
+    }
+
     @media (max-width: 760px) {
         .navbar {
             padding: 16px 0 20px 0;
@@ -1438,13 +1493,15 @@ def render_payment_page():
 
 
 def render_admin_panel():
-    st.markdown("### Admin Controls")
-    st.markdown("Manage approvals, revocations, and subscription extensions.")
+    st.markdown("### Operational Control")
+    st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Manage platform access, approvals, and subscription cycles.</div>', unsafe_allow_html=True)
 
-    if st.button("Logout Admin Session", key="admin_logout_btn"):
-        st.session_state.admin_authenticated = False
-        clear_admin_session()
-        st.rerun()
+    col_logout, col_empty = st.columns([1, 4])
+    with col_logout:
+        if st.button("Logout Admin", key="admin_logout_btn", use_container_width=True):
+            st.session_state.admin_authenticated = False
+            clear_admin_session()
+            st.rerun()
 
     try:
         response = supabase.table("users_access").select(
@@ -1452,95 +1509,100 @@ def render_admin_panel():
         ).order("created_at", desc=True).execute()
         users = response.data or []
     except Exception:
-        st.error("Admin panel is temporarily unavailable.")
+        st.error("Operational data is temporarily unavailable.")
         return
 
     if not users:
-        st.info("No users available.")
+        st.info("No registered users found.")
         return
 
-    headers = st.columns([1.2, 1.6, 1.1, 0.9, 0.9, 1, 1, 1.6])
-    header_labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
-    for col, label in zip(headers, header_labels):
-        with col:
-            st.markdown(f"**{label}**")
+    # Table Header with specific styling
+    st.markdown('<div style="background: #0B0B0B; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;">', unsafe_allow_html=True)
+    
+    # Header row
+    h_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
+    labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
+    for col, label in zip(h_cols, labels):
+        col.markdown(f'<p style="color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">{label}</p>', unsafe_allow_html=True)
+    
+    st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 16px;"></div>', unsafe_allow_html=True)
 
     today = datetime.now(timezone.utc)
     for idx, record in enumerate(users):
-        row = st.columns([1.2, 1.6, 1.1, 0.9, 0.9, 1, 1, 1.6])
-        with row[0]:
-            st.markdown(record.get("name") or "-")
-        with row[1]:
-            st.markdown(record.get("email") or "-")
-        with row[2]:
-            st.markdown(record.get("company_type") or "-")
-        with row[3]:
-            st.markdown("Yes" if record.get("payment_done") else "No")
-        with row[4]:
-            st.markdown("Yes" if record.get("approved") else "No")
-        with row[5]:
-            st.markdown(record.get("start_date") or "-")
-        with row[6]:
-            st.markdown(record.get("end_date") or "-")
-        with row[7]:
-            action_cols = st.columns(3)
-            email = record.get("email")
-            if action_cols[0].button("Approve", key=f"approve_{idx}"):
-                start_date = today.date().isoformat()
-                end_date = (today + timedelta(days=28)).date().isoformat()
-                try:
-                    updated = save_user_record(email, {
-                        "approved": True,
-                        "payment_done": True,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "is_active": True,
-                    })
-                    if not updated or not updated.get("approved") or str(updated.get("end_date")) != end_date:
-                        st.error(f"Approval update did not persist for {email}. Check Supabase policies.")
-                        return
-                    log_access_event(email, "approval")
-                    if st.session_state.user_email == email:
-                        sync_access_state()
-                    st.rerun()
-                except Exception:
-                    st.error(f"Could not approve {email}.")
-            if action_cols[1].button("Revoke", key=f"revoke_{idx}"):
-                try:
-                    updated = save_user_record(email, {"approved": False, "is_active": False})
-                    if not updated or updated.get("approved") is not False:
-                        st.error(f"Revoke update did not persist for {email}. Check Supabase policies.")
-                        return
-                    log_access_event(email, "revoke")
-                    if st.session_state.user_email == email:
-                        sync_access_state()
-                    st.rerun()
-                except Exception:
-                    st.error(f"Could not revoke {email}.")
-            if action_cols[2].button("Extend 28 Days", key=f"extend_{idx}"):
-                try:
-                    current_end = record.get("end_date")
-                    if current_end:
-                        parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
-                        if parsed_end.tzinfo is None:
-                            parsed_end = parsed_end.replace(tzinfo=timezone.utc)
-                    else:
-                        parsed_end = today
-                    new_end = (parsed_end + timedelta(days=28)).date().isoformat()
-                    updated = save_user_record(email, {
-                        "end_date": new_end,
-                        "approved": True,
-                        "payment_done": True,
-                    })
-                    if not updated or str(updated.get("end_date")) != new_end:
-                        st.error(f"Extension update did not persist for {email}. Check Supabase policies.")
-                        return
-                    log_access_event(email, "extend_access")
-                    if st.session_state.user_email == email:
-                        sync_access_state()
-                    st.rerun()
-                except Exception:
-                    st.error(f"Could not extend {email}.")
+        row_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
+        email = record.get("email")
+        
+        with row_cols[0]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("name") or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[1]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px; color: rgba(255,255,255,0.8);">{email or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[2]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("company_type") or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[3]:
+            status_paid = "Yes" if record.get("payment_done") else "No"
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_paid}</p>', unsafe_allow_html=True)
+        with row_cols[4]:
+            status_app = "Yes" if record.get("approved") else "No"
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_app}</p>', unsafe_allow_html=True)
+        with row_cols[5]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("start_date") or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[6]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("end_date") or "-"}</p>', unsafe_allow_html=True)
+        
+        with row_cols[7]:
+            # Action buttons in a horizontal row
+            btn_cols = st.columns([1, 1, 1.4])
+            
+            with btn_cols[0]:
+                if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
+                    start_date = today.date().isoformat()
+                    end_date = (today + timedelta(days=28)).date().isoformat()
+                    try:
+                        updated = save_user_record(email, {
+                            "approved": True,
+                            "payment_done": True,
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "is_active": True,
+                        })
+                        if updated and updated.get("approved") is True:
+                            log_access_event(email, "approval")
+                            st.rerun()
+                    except Exception: pass
+
+            with btn_cols[1]:
+                if st.button("Revoke", key=f"revoke_{idx}", use_container_width=True):
+                    try:
+                        updated = save_user_record(email, {"approved": False, "is_active": False})
+                        if updated and updated.get("approved") is False:
+                            log_access_event(email, "revoke")
+                            st.rerun()
+                    except Exception: pass
+
+            with btn_cols[2]:
+                if st.button("Extend 28d", key=f"extend_{idx}", use_container_width=True):
+                    try:
+                        current_end = record.get("end_date")
+                        if current_end:
+                            parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
+                            if parsed_end.tzinfo is None:
+                                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+                        else:
+                            parsed_end = today
+                        new_end = (parsed_end + timedelta(days=28)).date().isoformat()
+                        updated = save_user_record(email, {
+                            "end_date": new_end,
+                            "approved": True,
+                            "payment_done": True,
+                        })
+                        if updated and str(updated.get("end_date")) == new_end:
+                            log_access_event(email, "extend_access")
+                            st.rerun()
+                    except Exception: pass
+        
+        st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.04); margin: 8px 0;"></div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_admin_page():
