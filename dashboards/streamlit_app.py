@@ -1614,6 +1614,19 @@ def render_admin_panel():
         st.info("No registered users found.")
         return
 
+    # [DIAGNOSTIC] Admin Diagnostic Panel
+    with st.expander("🛠️ System Diagnostics", expanded=False):
+        diag_cols = st.columns(3)
+        with diag_cols[0]:
+            st.write(f"**Build:** `{BUILD_VERSION}`")
+            st.write(f"**Route:** `{st.session_state.page}`")
+        with diag_cols[1]:
+            st.write(f"**Email:** `{st.session_state.user_email}`")
+            st.write(f"**Auth:** `{st.session_state.authenticated}`")
+        with diag_cols[2]:
+            st.write(f"**Approved:** `{st.session_state.approved}`")
+            st.write(f"**Paid:** `{st.session_state.payment_done}`")
+
     # Table Header with specific styling
     st.markdown('<div style="background: #0B0B0B; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;">', unsafe_allow_html=True)
     
@@ -1769,15 +1782,15 @@ def render_workspace_page():
     sync_access_state()
     
     user_email = st.session_state.user_email
-    user = st.session_state.user
-    expiry_display = st.session_state.expiry_display
+    user = st.session_state.get("user") or {}
+    expiry_display = st.session_state.get("expiry_display", "Not specified")
 
     # Top Navigation / Workspace Header
     st.markdown("## Vessel Intelligence Workspace")
     
     col_info, col_logout = st.columns([4, 1])
     with col_info:
-        st.markdown(f"**Account:** {user_email} | **Company:** {record.get('company_type', 'N/A')} | **Access until:** {expiry_display}")
+        st.markdown(f"**Account:** {user_email} | **Company:** {user.get('company_type', 'N/A')} | **Access until:** {expiry_display}")
     with col_logout:
         if st.button("Logout Session", use_container_width=True):
             clear_all_auth_state()
