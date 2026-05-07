@@ -987,27 +987,30 @@ def get_status_markup():
     return f'<div class="nav-status {class_map.get(status, "status-pending")}">{label_map.get(status, "● APPROVAL PENDING")}</div>'
 
 
-def sync_access_state():
-    user_email = st.session_state.user_email
-    if not user_email:
-        return
+BUILD_VERSION = "workspace-rebuild-v1"
 
-    record = get_user_record(user_email)
+def get_access_state(record):
+    """
+    Unified source of truth for user access.
+    """
     if not record:
-        print(f"[LIFECYCLE] User {user_email} not found in DB during sync. Revoking access.")
-        clear_all_auth_state()
-        set_page("home")
-        st.rerun()
-
-    st.session_state.user = record
-    st.session_state.approved = bool(record.get("approved"))
-    st.session_state.user_name = record.get("name") or st.session_state.user_name
-    st.session_state.company_type = record.get("company_type") or st.session_state.company_type
-
+        return {
+            "authenticated": False,
+            "approved": False,
+            "payment_done": False,
+            "is_active": False,
+            "expired": False,
+            "has_workspace_access": False,
+            "status": "public"
+        }
+    
+    approved = bool(record.get("approved"))
+    payment_done = bool(record.get("payment_done"))
+    is_active = bool(record.get("is_active", True)) # Default to True if not present
+    
+    # Check expiry
+    expired = False
     if record.get("end_date"):
-        # If there is an end_date, we treat payment as done regardless of the flag
-        # as the admin set a subscription period.
-        st.session_state.payment_done = True 
         try:
             raw_end = str(record["end_date"]).replace("Z", "")
             if " " in raw_end:
@@ -1019,44 +1022,80 @@ def sync_access_state():
             
             # Normalize to 23:59:59 UTC
             end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-            st.session_state.expiry_display = end_date.strftime("%Y-%m-%d")
-            
             if end_date < datetime.now(timezone.utc):
-                print(f"[LIFECYCLE] User {user_email} access expired on {end_date}")
-                st.session_state.approved = False
-                st.session_state.payment_done = False
-                st.session_state.access_status = "expired"
-                # If expired, we should stay on payment or home, but not dashboard
-                if st.session_state.page == "dashboard":
-                    st.session_state.page = "payment"
-                    st.query_params["page"] = "payment"
-                    st.rerun()
-                return
-        except Exception as e:
-            print(f"[LIFECYCLE] Date parsing error for {user_email}: {str(e)}")
-            st.session_state.approved = False
-            st.session_state.access_status = "expired"
-            if st.session_state.page == "dashboard":
-                st.session_state.page = "payment"
-                st.query_params["page"] = "payment"
-                st.rerun()
-            return
+                expired = True
+                is_active = False
+        except Exception:
+            expired = True
+            is_active = False
+
+    # Logic: must be approved, active, and not expired
+    has_workspace_access = approved and is_active and not expired
+    
+    # Status determination
+    if expired:
+        status = "expired"
+    elif not is_active:
+        status = "revoked"
+    elif approved:
+        status = "approved"
+    elif payment_done:
+        status = "pending"
     else:
-        # If no end_date, respect the database flag
-        st.session_state.payment_done = bool(record.get("payment_done", False))
+        status = "authenticated"
+
+    return {
+        "authenticated": True,
+        "approved": approved,
+        "payment_done": payment_done,
+        "is_active": is_active,
+        "expired": expired,
+        "has_workspace_access": has_workspace_access,
+        "status": status
+    }
+
+
+def sync_access_state():
+    user_email = st.session_state.user_email
+    if not user_email:
+        return
+
+    record = get_user_record(user_email)
+    if not record:
+        print(f"[LIFECYCLE] User {user_email} not found in DB. Clearing state.")
+        clear_all_auth_state()
+        set_page("home")
+        st.rerun()
+
+    state = get_access_state(record)
+    
+    # Sync to session state
+    st.session_state.user = record
+    st.session_state.authenticated = state["authenticated"]
+    st.session_state.approved = state["approved"]
+    st.session_state.payment_done = state["payment_done"]
+    st.session_state.access_status = state["status"]
+    
+    if record.get("end_date"):
+        st.session_state.expiry_display = record["end_date"].split("T")[0] if "T" in record["end_date"] else record["end_date"]
+    else:
         st.session_state.expiry_display = "Not specified"
 
-    if st.session_state.approved:
-        st.session_state.access_status = "active"
-    elif st.session_state.payment_done:
-        st.session_state.access_status = "pending"
-    else:
-        st.session_state.access_status = "pending"
+    # Gating enforcement for Workspace
+    if st.session_state.page == "workspace" and not state["has_workspace_access"]:
+        print(f"[LIFECYCLE] {user_email} access denied to workspace. Status: {state['status']}")
+        set_page("payment")
+        st.rerun()
+    
+    # Auto-redirect to workspace if approved and on payment
+    if st.session_state.page == "payment" and state["has_workspace_access"]:
+        set_page("workspace")
+        st.rerun()
 
-# Final enforcement: if on dashboard but not approved, redirect
-if st.session_state.page == "dashboard" and not st.session_state.approved:
-    print(f"[LIFECYCLE] Unauthorized dashboard access attempt by {user_email}")
-    # Only redirect if they aren't approved - but first sync page to state
+
+# Final enforcement: if on workspace but not approved, redirect
+if st.session_state.page == "workspace" and not st.session_state.approved:
+    print(f"[LIFECYCLE] Unauthorized workspace access attempt")
     st.session_state.page = "payment"
     st.query_params["page"] = "payment"
     st.rerun()
@@ -1071,7 +1110,10 @@ if requested_page in {"home", "login", "register", "payment", "terms", "dashboar
     st.session_state.page = str(requested_page)
 
 if st.session_state.authenticated and st.session_state.page in {"login", "register"}:
-    set_page("dashboard" if st.session_state.approved else "payment")
+    # Use computed state for routing
+    record = get_user_record(st.session_state.user_email)
+    state = get_access_state(record)
+    set_page("workspace" if state["has_workspace_access"] else "payment")
 
 
 def render_top_nav():
@@ -1235,13 +1277,16 @@ def render_landing_page():
         
         if st.session_state.authenticated:
             # Lifecycle-aware CTAs
-            if st.session_state.approved:
+            record = get_user_record(st.session_state.user_email)
+            state = get_access_state(record)
+            
+            if state["has_workspace_access"]:
                 cta_label = "Enter Intelligence Workspace →"
-                target_page = "dashboard"
-            elif st.session_state.access_status == "expired":
+                target_page = "workspace"
+            elif state["status"] == "expired":
                 cta_label = "Renew Access →"
                 target_page = "payment"
-            elif st.session_state.payment_done:
+            elif state["status"] == "pending":
                 cta_label = "Approval Pending..."
                 target_page = "payment"
             else:
@@ -1720,195 +1765,113 @@ def load_data():
     return sanctions_df["clean_name"].tolist()
 
 
-def dashboard_page():
+def render_workspace_page():
     sync_access_state()
-    if not st.session_state.approved:
-        set_page("payment")
-        st.session_state.status_notice = "Access approval required."
-        st.warning("Access approval required.")
-        st.rerun()
-
+    
     user_email = st.session_state.user_email
     user = st.session_state.user
     expiry_display = st.session_state.expiry_display
 
-    top_left, top_mid, top_right = st.columns([3, 2, 1])
-    with top_left:
-        st.success("Access Granted")
-    with top_mid:
-        st.markdown(f"Valid until: {expiry_display}")
-    with top_right:
-        if st.button("Logout"):
-            print(f"[AUTH] User {user_email} logged out.")
-            log_access_event(user_email, "logout")
-            try:
-                save_user_record(user_email, {"last_login": None})
-            except Exception:
-                pass
+    # Top Navigation / Workspace Header
+    st.markdown("## Vessel Intelligence Workspace")
+    
+    col_info, col_logout = st.columns([4, 1])
+    with col_info:
+        st.markdown(f"**Account:** {user_email} | **Company:** {record.get('company_type', 'N/A')} | **Access until:** {expiry_display}")
+    with col_logout:
+        if st.button("Logout Session", use_container_width=True):
             clear_all_auth_state()
             st.rerun()
 
-    st.markdown(f"""
-    <div class="panel">
-    <p><b>Account:</b> {user_email}</p>
-    <p><b>Status:</b> {"APPROVED" if user.get("approved", False) else "NOT APPROVED"}</p>
-    <p><b>Expiry:</b> {expiry_display}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("---")
 
-    if not st.session_state.dashboard_log_written:
-        log_access_event(user_email, "dashboard_access")
-        st.session_state.dashboard_log_written = True
+    left_col, right_col = st.columns([1, 1.2], gap="large")
 
-    if st.session_state.admin_authenticated:
-        render_admin_panel()
+    with left_col:
+        st.markdown("### Vessel / Counterparty Submission")
+        st.markdown('<div class="form-note">Submit target details for real-time OFAC screening and risk intelligence analysis.</div>', unsafe_allow_html=True)
+        
+        with st.form("submission_form"):
+            v_name = st.text_input("Vessel Name")
+            v_imo = st.text_input("IMO Number")
+            v_flag = st.text_input("Flag State")
+            v_cp = st.text_input("Counterparty / Charterer")
+            v_owner = st.text_input("Beneficial Owner")
+            v_juris = st.text_input("Jurisdiction of Operation")
+            v_notes = st.text_area("Operational Notes")
+            
+            submit_intel = st.form_submit_button("Generate Intelligence Report")
 
-    st.title("Vessel Sanctions Screening for Crude Cargo")
-    st.markdown("Enter a vessel name to screen against the OFAC list.")
+    with right_col:
+        st.markdown("### Generated Risk Intelligence")
+        
+        if submit_intel:
+            if not v_name.strip():
+                st.warning("Vessel name is required for screening.")
+            else:
+                with st.spinner("Analyzing counterparty risk..."):
+                    # Existing Engine Logic
+                    try:
+                        sanctions_list = load_data()
+                        clean_vessel = clean_name(v_name)
+                        match, score, flag = match_name(clean_vessel, sanctions_list)
+                        risk = calculate_risk(flag, score, 0) # Base risk for now
+                        
+                        # Display Results
+                        st.markdown(f'<div class="panel">', unsafe_allow_html=True)
+                        
+                        status_class = "status-match" if flag else "status-clear"
+                        status_text = "Sanctions Match Found" if flag else "No Sanctions Match Found"
+                        st.markdown(f'<h2 class="status-hero {status_class}">{status_text}</h2>', unsafe_allow_html=True)
+                        
+                        m_col1, m_col2 = st.columns(2)
+                        with m_col1:
+                            st.metric("Risk Score", f"{risk}/100")
+                        with m_col2:
+                            st.metric("Match Confidence", f"{score}%")
+                        
+                        st.markdown("#### Compliance Findings")
+                        if flag:
+                            st.error(f"WARNING: Potential match found against OFAC SDN List: **{match}**")
+                        else:
+                            st.success("Target entity cleared against primary OFAC datasets.")
+                        
+                        st.markdown(f"**Vessel:** {v_name} ({v_imo or 'No IMO'})")
+                        st.markdown(f"**Jurisdiction:** {v_juris or 'Global'}")
+                        
+                        # Audit Summary
+                        st.info(f"Audit record generated at {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+                        
+                        # PDF Export
+                        try:
+                            pdf_bytes = generate_pdf(v_name, match, score, risk)
+                            st.download_button(
+                                label="Download Full Intelligence Report (PDF)",
+                                data=pdf_bytes,
+                                file_name=f"ChaAVON_Intel_{v_name.replace(' ', '_')}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                        except Exception:
+                            st.error("Report generation failed.")
+                            
+                        st.markdown("</div>", unsafe_allow_html=True)
+                        
+                        # Log usage
+                        try:
+                            supabase.table("usage_logs").insert({
+                                "email": user_email,
+                                "timestamp": datetime.now(timezone.utc).isoformat()
+                            }).execute()
+                        except Exception: pass
+                        
+                    except Exception as e:
+                        st.error(f"Intelligence engine error: {str(e)}")
+        else:
+            st.markdown('<div style="opacity: 0.5; text-align: center; padding-top: 100px;">Submit target details to begin analysis.</div>', unsafe_allow_html=True)
 
-    vessel_name = st.text_input("Enter Vessel Name")
-    ais_gap = st.number_input("AIS Gap (hours)", min_value=0, max_value=720, value=0)
-    run_check = st.button("Run Screening")
-
-    try:
-        sanctions_list = load_data()
-    except Exception:
-        st.error("Sanctions data failed to load. Please retry.")
-        st.stop()
-
-    if not sanctions_list:
-        st.error("Sanctions data is unavailable. Please retry.")
-        st.stop()
-
-    if run_check:
-        if not vessel_name.strip():
-            st.warning("Please enter a vessel name")
-            st.stop()
-
-        clean_vessel = clean_name(vessel_name)
-        with st.spinner("Running sanctions screening..."):
-            try:
-                match, score, flag = match_name(clean_vessel, sanctions_list)
-            except Exception:
-                st.error("Screening failed. Please retry.")
-                st.stop()
-
-        try:
-            risk = calculate_risk(flag, score, ais_gap)
-        except Exception:
-            st.error("Risk calculation failed. Please retry.")
-            st.stop()
-
-        risk_level = "Low"
-        risk_badge = "badge"
-        recommendation = "Proceed with standard compliance review."
-        if risk >= 70:
-            risk_level = "High"
-            recommendation = "Escalate for immediate compliance review before proceeding."
-        elif risk >= 40:
-            risk_level = "Medium"
-            recommendation = "Review supporting vessel activity and sanctions context."
-
-        flags_triggered = []
-        if flag:
-            flags_triggered.append("Sanctions match")
-        if ais_gap >= 24:
-            flags_triggered.append("AIS gap >= 24 hours")
-        flags_text = ", ".join(flags_triggered) if flags_triggered else "No risk flags triggered"
-
-        try:
-            supabase.table("usage_logs").insert({
-                "email": user_email,
-                "timestamp": datetime.utcnow().isoformat()
-            }).execute()
-        except Exception:
-            pass
-
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        st.header("Compliance Report")
-        st.markdown(
-            f"""
-            <p class="status-hero {'status-match' if flag else 'status-clear'}">
-                {'Sanctions Match Found' if flag else 'No Sanctions Match Found'}
-            </p>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        summary_col, screening_col, indicators_col = st.columns(3)
-
-        with summary_col:
-            st.markdown(
-                f"""
-                <div class="report-section">
-                    <div class="section-title">Executive Summary</div>
-                    <p class="report-line"><strong>Risk Level:</strong> <span class="{risk_badge}">{risk_level}</span></p>
-                    <p class="report-line"><strong>Score:</strong> {risk}/100</p>
-                    <p class="report-line"><strong>Recommendation:</strong> {recommendation}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with screening_col:
-            match_status = "Yes" if flag else "No"
-            confidence = score if flag else 0
-            matched_entity = match if flag else "None"
-            st.markdown(
-                f"""
-                <div class="report-section">
-                    <div class="section-title">Sanctions Screening</div>
-                    <p class="report-line"><strong>Match:</strong> <span class="badge">{match_status}</span></p>
-                    <p class="report-line"><strong>Confidence:</strong> {confidence}</p>
-                    <p class="report-line"><strong>Matched Vessel:</strong> {matched_entity}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with indicators_col:
-            st.markdown(
-                f"""
-                <div class="report-section">
-                    <div class="section-title">Risk Indicators</div>
-                    <p class="report-line"><strong>AIS Gap:</strong> {ais_gap} hours</p>
-                    <p class="report-line"><strong>Flags Triggered:</strong> {flags_text}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        risk_width = min(max(int(risk), 0), 100)
-        st.markdown(
-            f"""
-            <div class="risk-row">
-                <div class="risk-label">
-                    <span>Risk Score</span>
-                    <span>{risk}/100</span>
-                </div>
-                <div class="risk-track">
-                    <div class="risk-fill" style="width: {risk_width}%;"></div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.metric("Risk Score", f"{risk}/100")
-
-        try:
-            pdf_bytes = generate_pdf(vessel_name, match, score, risk)
-        except Exception:
-            st.error("Report generation failed. Please retry.")
-            st.stop()
-
-        st.download_button(
-            label="Download Compliance Report",
-            data=pdf_bytes,
-            file_name=f"compliance_report_{vessel_name}.pdf",
-            mime="application/pdf"
-        )
-
-        st.markdown("</div>", unsafe_allow_html=True)
+    # Footer build version
+    st.markdown(f'<div style="position: fixed; bottom: 10px; right: 20px; font-size: 10px; color: rgba(255,255,255,0.3);">Build {BUILD_VERSION}</div>', unsafe_allow_html=True)
 
 
 page = st.session_state.page
@@ -1924,10 +1887,10 @@ elif page == "terms":
     terms_page()
 elif page == "admin":
     render_admin_page()
-elif page == "dashboard":
-    dashboard_page()
+elif page == "workspace":
+    render_workspace_page()
 else:
     render_landing_page()
 
-if st.session_state.page != "dashboard":
+if st.session_state.page != "workspace":
     render_footer()
