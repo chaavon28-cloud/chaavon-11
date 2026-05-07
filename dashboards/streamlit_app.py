@@ -1741,8 +1741,29 @@ def render_admin_panel():
             st.info("No intelligence requests pending.")
         else:
             for req in all_reqs:
-                with st.expander(f"{req.get('vessel_name')} ({req.get('status')}) — {req.get('submitted_by')}", expanded=False):
-                    st.markdown("#### Vessel Details")
+                # SLA and Request Age
+                created_at_raw = req.get("created_at")
+                if created_at_raw:
+                    try:
+                        created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+                        age = datetime.now(timezone.utc) - created_at
+                        age_str = f"{age.days}d {age.seconds // 3600}h"
+                    except Exception:
+                        age_str = "N/A"
+                else:
+                    age_str = "N/A"
+                
+                status_color = {
+                    "Pending Review": "🔴",
+                    "Under Investigation": "🟡",
+                    "Awaiting Analyst Input": "🟠",
+                    "Analyst Review": "🔵",
+                    "Ready for Delivery": "🟢",
+                    "Delivered": "⚪"
+                }.get(req.get("status"), "⚪")
+
+                with st.expander(f"{status_color} {req.get('vessel_name')} ({req.get('status')}) — Age: {age_str}", expanded=False):
+                    st.markdown(f"**Request ID:** `{req.get('id')}` | **User:** {req.get('submitted_by')}")
                     v_col1, v_col2 = st.columns(2)
                     with v_col1:
                         st.write(f"**Vessel:** {req.get('vessel_name')}")
@@ -1756,32 +1777,210 @@ def render_admin_panel():
                     st.write(f"**User Notes:** {req.get('operational_notes') or 'None'}")
                     
                     st.markdown("---")
-                    st.markdown("#### Analyst Enrichment")
+                    st.markdown("#### Analyst Workspace & Enrichment")
                     
-                    with st.form(f"enrich_form_{req.get('id')}"):
-                        new_status = st.selectbox("Update Status", 
-                            ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Ready For Delivery", "Delivered"],
-                            index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Ready For Delivery", "Delivered"].index(req.get("status", "Pending Review"))
-                        )
-                        risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
-                            index=["Low", "Medium", "High"].index(req.get("risk_level", "Medium"))
-                        )
-                        analyst_notes = st.text_area("Analyst Findings / Observations", value=req.get("analyst_notes") or "")
+                    # --- ENRICHMENT TABS ---
+                    enrich_tabs = st.tabs(["Status", "Timeline", "Citations", "Port Calls", "Ownership", "Evidence", "Sign-off"])
+                    
+                    with enrich_tabs[0]:
+                        with st.form(f"status_form_{req.get('id')}"):
+                            new_status = st.selectbox("Update Status", 
+                                ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"],
+                                index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"].index(req.get("status", "Pending Review"))
+                            )
+                            risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
+                                index=["Low", "Medium", "High"].index(req.get("risk_level", "Medium"))
+                            )
+                            analyst_notes = st.text_area("Internal Analyst Notes", value=req.get("analyst_notes") or "")
+                            
+                            if st.form_submit_button("Update Status"):
+                                try:
+                                    supabase.table("intelligence_requests").update({
+                                        "status": new_status,
+                                        "risk_level": risk_lvl,
+                                        "analyst_notes": analyst_notes,
+                                        "delivered_at": datetime.now(timezone.utc).isoformat() if new_status == "Delivered" else req.get("delivered_at")
+                                    }).eq("id", req.get("id")).execute()
+                                    st.success("Status updated.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Update failed: {str(e)}")
+
+                    with enrich_tabs[1]:
+                        st.write("**Vessel Timeline**")
+                        timeline = req.get("timeline_events") or []
+                        for i, item in enumerate(timeline):
+                            st.write(f"{item.get('date')} - {item.get('event')} ({item.get('jurisdiction')})")
                         
-                        save_enrich = st.form_submit_button("Update Request & Save Findings")
-                        
-                        if save_enrich:
-                            try:
-                                supabase.table("intelligence_requests").update({
-                                    "status": new_status,
-                                    "risk_level": risk_lvl,
-                                    "analyst_notes": analyst_notes,
-                                    "delivered_at": datetime.now(timezone.utc).isoformat() if new_status == "Delivered" else req.get("delivered_at")
-                                }).eq("id", req.get("id")).execute()
-                                st.success("Findings saved and status updated.")
+                        with st.form(f"timeline_form_{req.get('id')}"):
+                            t_date = st.date_input("Date")
+                            t_event = st.text_input("Event (e.g., Flag Change, AIS Blackout)")
+                            t_juris = st.text_input("Jurisdiction")
+                            t_notes = st.text_area("Notes")
+                            if st.form_submit_button("Add Timeline Entry"):
+                                timeline.append({
+                                    "date": t_date.isoformat(),
+                                    "event": t_event,
+                                    "jurisdiction": t_juris,
+                                    "notes": t_notes
+                                })
+                                supabase.table("intelligence_requests").update({"timeline_events": timeline}).eq("id", req.get("id")).execute()
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Save failed: {str(e)}")
+
+                    with enrich_tabs[2]:
+                        st.write("**Sanctions Source Citations**")
+                        citations = req.get("citations") or []
+                        for c in citations:
+                            st.write(f"[{c.get('source')}]({c.get('url')}) - {c.get('observation')}")
+                        
+                        with st.form(f"citation_form_{req.get('id')}"):
+                            c_source = st.text_input("Source Name")
+                            c_url = st.text_input("Source URL")
+                            c_obs = st.text_area("Observation")
+                            if st.form_submit_button("Add Citation"):
+                                citations.append({
+                                    "source": c_source,
+                                    "url": c_url,
+                                    "observation": c_obs,
+                                    "access_date": datetime.now(timezone.utc).isoformat()
+                                })
+                                supabase.table("intelligence_requests").update({"citations": citations}).eq("id", req.get("id")).execute()
+                                st.rerun()
+
+                    with enrich_tabs[3]:
+                        st.write("**Port Call Chronology**")
+                        port_calls = req.get("port_calls") or []
+                        for p in port_calls:
+                            st.write(f"{p.get('port')} ({p.get('arrival')} to {p.get('departure')})")
+                        
+                        with st.form(f"port_form_{req.get('id')}"):
+                            p_name = st.text_input("Port Name")
+                            p_arr = st.date_input("Arrival Date")
+                            p_dep = st.date_input("Departure Date")
+                            p_risk = st.text_input("Risk Observation")
+                            p_notes = st.text_area("Activity Notes")
+                            if st.form_submit_button("Add Port Call"):
+                                port_calls.append({
+                                    "port": p_name,
+                                    "arrival": p_arr.isoformat(),
+                                    "departure": p_dep.isoformat(),
+                                    "risk": p_risk,
+                                    "notes": p_notes
+                                })
+                                supabase.table("intelligence_requests").update({"port_calls": port_calls}).eq("id", req.get("id")).execute()
+                                st.rerun()
+
+                    with enrich_tabs[4]:
+                        st.write("**Ownership History**")
+                        ownership = req.get("ownership_history") or []
+                        for o in ownership:
+                            st.write(f"{o.get('company')} ({o.get('jurisdiction')})")
+                        
+                        with st.form(f"owner_form_{req.get('id')}"):
+                            o_comp = st.text_input("Company Name")
+                            o_juris = st.text_input("Jurisdiction")
+                            o_start = st.date_input("Start Date")
+                            o_end = st.date_input("End Date (leave if current)")
+                            o_notes = st.text_area("Ownership Notes")
+                            if st.form_submit_button("Add Ownership Entry"):
+                                ownership.append({
+                                    "company": o_comp,
+                                    "jurisdiction": o_juris,
+                                    "start": o_start.isoformat(),
+                                    "end": o_end.isoformat() if o_end else None,
+                                    "notes": o_notes
+                                })
+                                supabase.table("intelligence_requests").update({"ownership_history": ownership}).eq("id", req.get("id")).execute()
+                                st.rerun()
+
+                    with enrich_tabs[5]:
+                        st.write("**Evidence Appendix**")
+                        evidence = req.get("evidence_attachments") or []
+                        for e in evidence:
+                            st.write(f"- {e.get('name')} ({e.get('type')})")
+                        
+                        with st.form(f"evidence_form_{req.get('id')}"):
+                            e_name = st.text_input("Evidence Title")
+                            e_type = st.selectbox("Type", ["Screenshot", "PDF Extract", "Registry Document", "Analyst Note"])
+                            e_desc = st.text_area("Description / Analyst Observations")
+                            if st.form_submit_button("Add Evidence Reference"):
+                                evidence.append({
+                                    "name": e_name,
+                                    "type": e_type,
+                                    "description": e_desc,
+                                    "added_at": datetime.now(timezone.utc).isoformat()
+                                })
+                                supabase.table("intelligence_requests").update({"evidence_attachments": evidence}).eq("id", req.get("id")).execute()
+                                st.rerun()
+
+                    with enrich_tabs[6]:
+                        st.write("**Analyst Sign-off**")
+                        with st.form(f"signoff_form_{req.get('id')}"):
+                            a_name = st.text_input("Analyst Name", value=req.get("analyst_name") or "")
+                            conf_lvl = st.select_slider("Confidence Level", options=["Low", "Medium", "High"], value=req.get("confidence_level", "Medium"))
+                            rec_lvl = st.select_slider("Recommendation Level", options=["Standard Due Diligence", "Enhanced Due Diligence", "Escalation Recommended"], value=req.get("recommendation_level", "Standard Due Diligence"))
+                            
+                            if st.form_submit_button("Sign Off & Finalize"):
+                                try:
+                                    supabase.table("intelligence_requests").update({
+                                        "analyst_name": a_name,
+                                        "confidence_level": conf_lvl,
+                                        "recommendation_level": rec_lvl,
+                                        "analyst_timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "status": "Ready for Delivery"
+                                    }).eq("id", req.get("id")).execute()
+                                    st.success("Sign-off complete. Report marked as Ready for Delivery.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Sign-off failed: {str(e)}")
+
+                    st.markdown("---")
+                    st.markdown("#### Report Generation")
+                    gen_col1, gen_col2 = st.columns(2)
+                    with gen_col1:
+                        if st.button("Generate Institutional Report", key=f"gen_{req.get('id')}"):
+                            with st.spinner("Generating 10+ page intelligence report..."):
+                                try:
+                                    import os
+                                    # Versioning
+                                    current_version = int(req.get("report_version", 0)) + 1
+                                    
+                                    # Generate PDF
+                                    pdf_bytes = generate_pdf(req, req) # Pass req as both vessel_data and match_data for now
+                                    
+                                    # Archival
+                                    if not os.path.exists("generated_reports"):
+                                        os.makedirs("generated_reports")
+                                    
+                                    filename = f"ChaAVON_Report_{req.get('vessel_name').replace(' ', '_')}_{req.get('imo_number') or 'NOIMO'}_v{current_version}.pdf"
+                                    filepath = os.path.join("generated_reports", filename)
+                                    
+                                    with open(filepath, "wb") as f:
+                                        f.write(pdf_bytes)
+                                    
+                                    # Update Supabase
+                                    supabase.table("intelligence_requests").update({
+                                        "report_version": current_version,
+                                        "report_path": filepath,
+                                        "updated_at": datetime.now(timezone.utc).isoformat()
+                                    }).eq("id", req.get("id")).execute()
+                                    
+                                    st.success(f"Report v{current_version} generated and archived.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Generation failed: {str(e)}")
+
+                    with gen_col2:
+                        if req.get("report_path"):
+                            st.write(f"Current Version: v{req.get('report_version')}")
+                            with open(req.get("report_path"), "rb") as f:
+                                st.download_button(
+                                    label="Download Archived Report",
+                                    data=f.read(),
+                                    file_name=os.path.basename(req.get("report_path")),
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
 
 
 def render_admin_page():
@@ -1863,7 +2062,7 @@ def render_workspace_page():
         st.markdown("### Intelligence Request Submission")
         st.markdown('<div class="form-note">Submit target details for analyst-led maritime risk intelligence and deep-dive screening.</div>', unsafe_allow_html=True)
         
-        with st.form("submission_form"):
+        with st.form("submission_form", clear_on_submit=True):
             v_name = st.text_input("Vessel Name")
             v_imo = st.text_input("IMO Number")
             v_flag = st.text_input("Flag State")
@@ -1881,18 +2080,25 @@ def render_workspace_page():
                 try:
                     payload = {
                         "submitted_by": user_email,
-                        "vessel_name": v_name,
-                        "imo_number": v_imo,
-                        "flag_state": v_flag,
-                        "owner": v_owner,
-                        "charterer": v_cp,
-                        "jurisdiction": v_juris,
-                        "operational_notes": v_notes,
+                        "vessel_name": v_name.strip(),
+                        "imo_number": v_imo.strip(),
+                        "flag_state": v_flag.strip(),
+                        "owner": v_owner.strip(),
+                        "charterer": v_cp.strip(),
+                        "jurisdiction": v_juris.strip(),
+                        "operational_notes": v_notes.strip(),
                         "status": "Pending Review",
-                        "created_at": datetime.now(timezone.utc).isoformat()
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "timeline_events": [],
+                        "citations": [],
+                        "port_calls": [],
+                        "ownership_history": [],
+                        "evidence_attachments": [],
+                        "report_version": 0
                     }
                     supabase.table("intelligence_requests").insert(payload).execute()
                     st.success("Request submitted successfully. An analyst will begin investigation shortly.")
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Submission failed: {str(e)}")
 
@@ -1917,26 +2123,33 @@ def render_workspace_page():
                     
                     if r.get("status") == "Delivered":
                         st.success("Report is ready for delivery.")
-                        # Construct report data for PDF
-                        v_data = {
-                            "vessel_name": r.get("vessel_name"),
-                            "imo": r.get("imo_number")
-                        }
-                        m_data = {
-                            "risk_level": r.get("risk_level", "Medium")
-                        }
-                        try:
-                            pdf_bytes = generate_pdf(v_data, m_data)
-                            st.download_button(
-                                label=f"Download Intelligence Report (PDF)",
-                                data=pdf_bytes,
-                                file_name=f"ChaAVON_Intel_{r.get('vessel_name').replace(' ', '_')}.pdf",
-                                mime="application/pdf",
-                                key=f"dl_{r.get('id')}",
-                                use_container_width=True
-                            )
-                        except Exception as e:
-                            st.error(f"Report generation error: {str(e)}")
+                        
+                        # Use archived report if available
+                        report_path = r.get("report_path")
+                        if report_path and os.path.exists(report_path):
+                            with open(report_path, "rb") as f:
+                                st.download_button(
+                                    label=f"Download Intelligence Report (v{r.get('report_version', 1)})",
+                                    data=f.read(),
+                                    file_name=os.path.basename(report_path),
+                                    mime="application/pdf",
+                                    key=f"dl_user_{r.get('id')}",
+                                    use_container_width=True
+                                )
+                        else:
+                            # Fallback: Generate fresh if archive missing
+                            try:
+                                pdf_bytes = generate_pdf(r, r)
+                                st.download_button(
+                                    label=f"Download Intelligence Report (PDF)",
+                                    data=pdf_bytes,
+                                    file_name=f"ChaAVON_Intel_{r.get('vessel_name').replace(' ', '_')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_user_fallback_{r.get('id')}",
+                                    use_container_width=True
+                                )
+                            except Exception as e:
+                                st.error(f"Report generation error: {str(e)}")
                     elif r.get("status") == "Under Investigation":
                         st.info("Analysts are currently enriching vessel information and AIS patterns.")
                     else:
