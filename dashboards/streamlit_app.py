@@ -1592,137 +1592,196 @@ def render_payment_page():
 
 def render_admin_panel():
     st.markdown("### Operational Control")
-    st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Manage platform access, approvals, and subscription cycles.</div>', unsafe_allow_html=True)
-
-    col_logout, col_empty = st.columns([1, 4])
-    with col_logout:
-        if st.button("Logout Admin", key="admin_logout_btn", use_container_width=True):
-            print("[AUTH] Admin logged out.")
-            clear_all_auth_state()
-            st.rerun()
-
-    try:
-        response = supabase.table("users_access").select(
-            "name, email, company_type, payment_done, approved, start_date, end_date"
-        ).order("created_at", desc=True).execute()
-        users = response.data or []
-    except Exception:
-        st.error("Operational data is temporarily unavailable.")
-        return
-
-    if not users:
-        st.info("No registered users found.")
-        return
-
-    # [DIAGNOSTIC] Admin Diagnostic Panel
-    with st.expander("🛠️ System Diagnostics", expanded=False):
-        diag_cols = st.columns(3)
-        with diag_cols[0]:
-            st.write(f"**Build:** `{BUILD_VERSION}`")
-            st.write(f"**Route:** `{st.session_state.page}`")
-        with diag_cols[1]:
-            st.write(f"**Email:** `{st.session_state.user_email}`")
-            st.write(f"**Auth:** `{st.session_state.authenticated}`")
-        with diag_cols[2]:
-            st.write(f"**Approved:** `{st.session_state.approved}`")
-            st.write(f"**Paid:** `{st.session_state.payment_done}`")
-
-    # Table Header with specific styling
-    st.markdown('<div style="background: #0B0B0B; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;">', unsafe_allow_html=True)
     
-    # Header row
-    h_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
-    labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
-    for col, label in zip(h_cols, labels):
-        col.markdown(f'<p style="color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">{label}</p>', unsafe_allow_html=True)
-    
-    st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 16px;"></div>', unsafe_allow_html=True)
+    tab_users, tab_requests = st.tabs(["User Access", "Intelligence Requests"])
 
-    today = datetime.now(timezone.utc)
-    for idx, record in enumerate(users):
-        row_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
-        email = record.get("email")
-        
-        with row_cols[0]:
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("name") or "-"}</p>', unsafe_allow_html=True)
-        with row_cols[1]:
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px; color: rgba(255,255,255,0.8);">{email or "-"}</p>', unsafe_allow_html=True)
-        with row_cols[2]:
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("company_type") or "-"}</p>', unsafe_allow_html=True)
-        with row_cols[3]:
-            status_paid = "Yes" if record.get("payment_done") else "No"
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_paid}</p>', unsafe_allow_html=True)
-        with row_cols[4]:
-            status_app = "Yes" if record.get("approved") else "No"
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_app}</p>', unsafe_allow_html=True)
-        with row_cols[5]:
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("start_date") or "-"}</p>', unsafe_allow_html=True)
-        with row_cols[6]:
-            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("end_date") or "-"}</p>', unsafe_allow_html=True)
-        
-        with row_cols[7]:
-            # Action buttons in a horizontal row
-            btn_cols = st.columns([1, 1, 1.4])
+    with tab_users:
+        st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Manage platform access, approvals, and subscription cycles.</div>', unsafe_allow_html=True)
+
+        col_logout, col_empty = st.columns([1, 4])
+        with col_logout:
+            if st.button("Logout Admin", key="admin_logout_btn", use_container_width=True):
+                print("[AUTH] Admin logged out.")
+                clear_all_auth_state()
+                st.rerun()
+
+        try:
+            response = supabase.table("users_access").select(
+                "name, email, company_type, payment_done, approved, start_date, end_date"
+            ).order("created_at", desc=True).execute()
+            users = response.data or []
+        except Exception:
+            st.error("Operational data is temporarily unavailable.")
+            return
+
+        if not users:
+            st.info("No registered users found.")
+        else:
+            # [DIAGNOSTIC] Admin Diagnostic Panel
+            with st.expander("🛠️ System Diagnostics", expanded=False):
+                diag_cols = st.columns(3)
+                with diag_cols[0]:
+                    st.write(f"**Build:** `{BUILD_VERSION}`")
+                    st.write(f"**Route:** `{st.session_state.page}`")
+                with diag_cols[1]:
+                    st.write(f"**Email:** `{st.session_state.user_email}`")
+                    st.write(f"**Auth:** `{st.session_state.authenticated}`")
+                with diag_cols[2]:
+                    st.write(f"**Approved:** `{st.session_state.approved}`")
+                    st.write(f"**Paid:** `{st.session_state.payment_done}`")
+
+            # Table Header with specific styling
+            st.markdown('<div style="background: #0B0B0B; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;">', unsafe_allow_html=True)
             
-            with btn_cols[0]:
-                if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
-                    start_date = today.date().isoformat()
-                    end_date = (today + timedelta(days=28)).date().isoformat()
-                    payload = {
-                        "approved": True,
-                        "payment_done": True,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "is_active": True,
-                    }
-                    updated = save_user_record(email, payload)
-                    if updated and updated.get("approved") is True:
-                        log_access_event(email, "approval")
-                        st.success(f"Successfully approved {email}")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to approve {email}. Persistence failed.")
+            # Header row
+            h_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
+            labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
+            for col, label in zip(h_cols, labels):
+                col.markdown(f'<p style="color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">{label}</p>', unsafe_allow_html=True)
+            
+            st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 16px;"></div>', unsafe_allow_html=True)
 
-            with btn_cols[1]:
-                if st.button("Revoke", key=f"revoke_{idx}", use_container_width=True):
-                    payload = {"approved": False, "is_active": False}
-                    updated = save_user_record(email, payload)
-                    if updated and updated.get("approved") is False:
-                        log_access_event(email, "revoke")
-                        st.success(f"Successfully revoked {email}")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to revoke {email}. Persistence failed.")
+            today = datetime.now(timezone.utc)
+            for idx, record in enumerate(users):
+                row_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
+                email = record.get("email")
+                
+                with row_cols[0]:
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("name") or "-"}</p>', unsafe_allow_html=True)
+                with row_cols[1]:
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px; color: rgba(255,255,255,0.8);">{email or "-"}</p>', unsafe_allow_html=True)
+                with row_cols[2]:
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("company_type") or "-"}</p>', unsafe_allow_html=True)
+                with row_cols[3]:
+                    status_paid = "Yes" if record.get("payment_done") else "No"
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_paid}</p>', unsafe_allow_html=True)
+                with row_cols[4]:
+                    status_app = "Yes" if record.get("approved") else "No"
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_app}</p>', unsafe_allow_html=True)
+                with row_cols[5]:
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("start_date") or "-"}</p>', unsafe_allow_html=True)
+                with row_cols[6]:
+                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("end_date") or "-"}</p>', unsafe_allow_html=True)
+                
+                with row_cols[7]:
+                    # Action buttons in a horizontal row
+                    btn_cols = st.columns([1, 1, 1.4])
+                    
+                    with btn_cols[0]:
+                        if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
+                            start_date = today.date().isoformat()
+                            end_date = (today + timedelta(days=28)).date().isoformat()
+                            payload = {
+                                "approved": True,
+                                "payment_done": True,
+                                "start_date": start_date,
+                                "end_date": end_date,
+                                "is_active": True,
+                            }
+                            updated = save_user_record(email, payload)
+                            if updated and updated.get("approved") is True:
+                                log_access_event(email, "approval")
+                                st.success(f"Successfully approved {email}")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to approve {email}. Persistence failed.")
 
-            with btn_cols[2]:
-                if st.button("Extend 28d", key=f"extend_{idx}", use_container_width=True):
-                    current_end = record.get("end_date")
-                    if current_end:
-                        try:
-                            parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
-                            if parsed_end.tzinfo is None:
-                                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
-                        except Exception:
-                            parsed_end = today
-                    else:
-                        parsed_end = today
-                    new_end = (parsed_end + timedelta(days=28)).date().isoformat()
-                    payload = {
-                        "end_date": new_end,
-                        "approved": True,
-                        "payment_done": True,
-                    }
-                    updated = save_user_record(email, payload)
-                    if updated and str(updated.get("end_date")) == new_end:
-                        log_access_event(email, "extend_access")
-                        st.success(f"Successfully extended {email} to {new_end}")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to extend {email}. Persistence failed.")
+                    with btn_cols[1]:
+                        if st.button("Revoke", key=f"revoke_{idx}", use_container_width=True):
+                            payload = {"approved": False, "is_active": False}
+                            updated = save_user_record(email, payload)
+                            if updated and updated.get("approved") is False:
+                                log_access_event(email, "revoke")
+                                st.success(f"Successfully revoked {email}")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to revoke {email}. Persistence failed.")
+
+                    with btn_cols[2]:
+                        if st.button("Extend 28d", key=f"extend_{idx}", use_container_width=True):
+                            current_end = record.get("end_date")
+                            if current_end:
+                                try:
+                                    parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
+                                    if parsed_end.tzinfo is None:
+                                        parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+                                except Exception:
+                                    parsed_end = today
+                            else:
+                                parsed_end = today
+                            new_end = (parsed_end + timedelta(days=28)).date().isoformat()
+                            payload = {
+                                "end_date": new_end,
+                                "approved": True,
+                                "payment_done": True,
+                            }
+                            updated = save_user_record(email, payload)
+                            if updated and str(updated.get("end_date")) == new_end:
+                                log_access_event(email, "extend_access")
+                                st.success(f"Successfully extended {email} to {new_end}")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to extend {email}. Persistence failed.")
+                
+                st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.04); margin: 8px 0;"></div>', unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    with tab_requests:
+        st.markdown("### Maritime Intelligence Queue")
         
-        st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.04); margin: 8px 0;"></div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        try:
+            res = supabase.table("intelligence_requests").select("*").order("created_at", desc=True).execute()
+            all_reqs = res.data or []
+        except Exception as e:
+            st.error(f"Could not load intelligence queue: {str(e)}")
+            all_reqs = []
+
+        if not all_reqs:
+            st.info("No intelligence requests pending.")
+        else:
+            for req in all_reqs:
+                with st.expander(f"{req.get('vessel_name')} ({req.get('status')}) — {req.get('submitted_by')}", expanded=False):
+                    st.markdown("#### Vessel Details")
+                    v_col1, v_col2 = st.columns(2)
+                    with v_col1:
+                        st.write(f"**Vessel:** {req.get('vessel_name')}")
+                        st.write(f"**IMO:** {req.get('imo_number') or 'N/A'}")
+                        st.write(f"**Flag:** {req.get('flag_state') or 'N/A'}")
+                    with v_col2:
+                        st.write(f"**Owner:** {req.get('owner') or 'N/A'}")
+                        st.write(f"**Charterer:** {req.get('charterer') or 'N/A'}")
+                        st.write(f"**Jurisdiction:** {req.get('jurisdiction') or 'N/A'}")
+                    
+                    st.write(f"**User Notes:** {req.get('operational_notes') or 'None'}")
+                    
+                    st.markdown("---")
+                    st.markdown("#### Analyst Enrichment")
+                    
+                    with st.form(f"enrich_form_{req.get('id')}"):
+                        new_status = st.selectbox("Update Status", 
+                            ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Ready For Delivery", "Delivered"],
+                            index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Ready For Delivery", "Delivered"].index(req.get("status", "Pending Review"))
+                        )
+                        risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
+                            index=["Low", "Medium", "High"].index(req.get("risk_level", "Medium"))
+                        )
+                        analyst_notes = st.text_area("Analyst Findings / Observations", value=req.get("analyst_notes") or "")
+                        
+                        save_enrich = st.form_submit_button("Update Request & Save Findings")
+                        
+                        if save_enrich:
+                            try:
+                                supabase.table("intelligence_requests").update({
+                                    "status": new_status,
+                                    "risk_level": risk_lvl,
+                                    "analyst_notes": analyst_notes,
+                                    "delivered_at": datetime.now(timezone.utc).isoformat() if new_status == "Delivered" else req.get("delivered_at")
+                                }).eq("id", req.get("id")).execute()
+                                st.success("Findings saved and status updated.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Save failed: {str(e)}")
 
 
 def render_admin_page():
@@ -1801,87 +1860,87 @@ def render_workspace_page():
     left_col, right_col = st.columns([1, 1.2], gap="large")
 
     with left_col:
-        st.markdown("### Vessel / Counterparty Submission")
-        st.markdown('<div class="form-note">Submit target details for real-time OFAC screening and risk intelligence analysis.</div>', unsafe_allow_html=True)
+        st.markdown("### Intelligence Request Submission")
+        st.markdown('<div class="form-note">Submit target details for analyst-led maritime risk intelligence and deep-dive screening.</div>', unsafe_allow_html=True)
         
         with st.form("submission_form"):
             v_name = st.text_input("Vessel Name")
             v_imo = st.text_input("IMO Number")
             v_flag = st.text_input("Flag State")
-            v_cp = st.text_input("Counterparty / Charterer")
+            v_cp = st.text_input("Charterer / Counterparty")
             v_owner = st.text_input("Beneficial Owner")
-            v_juris = st.text_input("Jurisdiction of Operation")
-            v_notes = st.text_area("Operational Notes")
+            v_juris = st.text_input("Primary Jurisdiction")
+            v_notes = st.text_area("Operational Context / Special Instructions")
             
-            submit_intel = st.form_submit_button("Generate Intelligence Report")
+            submit_req = st.form_submit_button("Submit Intelligence Request")
+
+        if submit_req:
+            if not v_name.strip():
+                st.warning("Vessel name is required.")
+            else:
+                try:
+                    payload = {
+                        "submitted_by": user_email,
+                        "vessel_name": v_name,
+                        "imo_number": v_imo,
+                        "flag_state": v_flag,
+                        "owner": v_owner,
+                        "charterer": v_cp,
+                        "jurisdiction": v_juris,
+                        "operational_notes": v_notes,
+                        "status": "Pending Review",
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    supabase.table("intelligence_requests").insert(payload).execute()
+                    st.success("Request submitted successfully. An analyst will begin investigation shortly.")
+                except Exception as e:
+                    st.error(f"Submission failed: {str(e)}")
 
     with right_col:
-        st.markdown("### Generated Risk Intelligence")
+        st.markdown("### Your Intelligence Queue")
         
-        if submit_intel:
-            if not v_name.strip():
-                st.warning("Vessel name is required for screening.")
-            else:
-                with st.spinner("Analyzing counterparty risk..."):
-                    # Existing Engine Logic
-                    try:
-                        sanctions_list = load_data()
-                        clean_vessel = clean_name(v_name)
-                        match, score, flag = match_name(clean_vessel, sanctions_list)
-                        risk = calculate_risk(flag, score, 0) # Base risk for now
-                        
-                        # Display Results
-                        st.markdown(f'<div class="panel">', unsafe_allow_html=True)
-                        
-                        status_class = "status-match" if flag else "status-clear"
-                        status_text = "Sanctions Match Found" if flag else "No Sanctions Match Found"
-                        st.markdown(f'<h2 class="status-hero {status_class}">{status_text}</h2>', unsafe_allow_html=True)
-                        
-                        m_col1, m_col2 = st.columns(2)
-                        with m_col1:
-                            st.metric("Risk Score", f"{risk}/100")
-                        with m_col2:
-                            st.metric("Match Confidence", f"{score}%")
-                        
-                        st.markdown("#### Compliance Findings")
-                        if flag:
-                            st.error(f"WARNING: Potential match found against OFAC SDN List: **{match}**")
-                        else:
-                            st.success("Target entity cleared against primary OFAC datasets.")
-                        
-                        st.markdown(f"**Vessel:** {v_name} ({v_imo or 'No IMO'})")
-                        st.markdown(f"**Jurisdiction:** {v_juris or 'Global'}")
-                        
-                        # Audit Summary
-                        st.info(f"Audit record generated at {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
-                        
-                        # PDF Export
+        try:
+            res = supabase.table("intelligence_requests").select("*").eq("submitted_by", user_email).order("created_at", desc=True).execute()
+            reqs = res.data or []
+        except Exception:
+            reqs = []
+            st.error("Could not load your intelligence queue.")
+
+        if not reqs:
+            st.markdown('<div style="opacity: 0.5; text-align: center; padding-top: 100px;">No active intelligence requests found.</div>', unsafe_allow_html=True)
+        else:
+            for r in reqs:
+                with st.expander(f"{r.get('vessel_name')} — {r.get('status')}", expanded=False):
+                    st.write(f"**Submitted:** {r.get('created_at', '')[:10]}")
+                    st.write(f"**IMO:** {r.get('imo_number') or 'N/A'}")
+                    st.write(f"**Status:** {r.get('status')}")
+                    
+                    if r.get("status") == "Delivered":
+                        st.success("Report is ready for delivery.")
+                        # Construct report data for PDF
+                        v_data = {
+                            "vessel_name": r.get("vessel_name"),
+                            "imo": r.get("imo_number")
+                        }
+                        m_data = {
+                            "risk_level": r.get("risk_level", "Medium")
+                        }
                         try:
-                            pdf_bytes = generate_pdf(v_name, match, score, risk)
+                            pdf_bytes = generate_pdf(v_data, m_data)
                             st.download_button(
-                                label="Download Full Intelligence Report (PDF)",
+                                label=f"Download Intelligence Report (PDF)",
                                 data=pdf_bytes,
-                                file_name=f"ChaAVON_Intel_{v_name.replace(' ', '_')}.pdf",
+                                file_name=f"ChaAVON_Intel_{r.get('vessel_name').replace(' ', '_')}.pdf",
                                 mime="application/pdf",
+                                key=f"dl_{r.get('id')}",
                                 use_container_width=True
                             )
-                        except Exception:
-                            st.error("Report generation failed.")
-                            
-                        st.markdown("</div>", unsafe_allow_html=True)
-                        
-                        # Log usage
-                        try:
-                            supabase.table("usage_logs").insert({
-                                "email": user_email,
-                                "timestamp": datetime.now(timezone.utc).isoformat()
-                            }).execute()
-                        except Exception: pass
-                        
-                    except Exception as e:
-                        st.error(f"Intelligence engine error: {str(e)}")
-        else:
-            st.markdown('<div style="opacity: 0.5; text-align: center; padding-top: 100px;">Submit target details to begin analysis.</div>', unsafe_allow_html=True)
+                        except Exception as e:
+                            st.error(f"Report generation error: {str(e)}")
+                    elif r.get("status") == "Under Investigation":
+                        st.info("Analysts are currently enriching vessel information and AIS patterns.")
+                    else:
+                        st.info("Request is in the global analyst queue.")
 
     # Footer build version
     st.markdown(f'<div style="position: fixed; bottom: 10px; right: 20px; font-size: 10px; color: rgba(255,255,255,0.3);">Build {BUILD_VERSION}</div>', unsafe_allow_html=True)
