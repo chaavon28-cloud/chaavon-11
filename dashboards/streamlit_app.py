@@ -828,8 +828,10 @@ def restore_admin_session():
         clear_admin_session()
 
 
-def reset_auth_state():
+def clear_all_auth_state():
+    # Clear session state
     st.session_state.authenticated = False
+    st.session_state.admin_authenticated = False
     st.session_state.user_email = None
     st.session_state.payment_done = False
     st.session_state.approved = False
@@ -839,6 +841,17 @@ def reset_auth_state():
     st.session_state.expiry_display = "Not specified"
     st.session_state.access_status = "pending"
     st.session_state.dashboard_log_written = False
+    
+    # Clear cookies
+    clear_auth_session()
+    clear_admin_session()
+    
+    # Clear route params
+    clear_route_params()
+
+
+def reset_auth_state():
+    clear_all_auth_state()
 
 
 def restore_session():
@@ -849,34 +862,35 @@ def restore_session():
     session_email = str(payload.get("email", "")).strip().lower()
     issued_at = payload.get("issued_at")
     if not session_email or not issued_at:
-        clear_auth_session()
+        print(f"[AUTH] Invalid session payload for {session_email}")
+        clear_all_auth_state()
         return
 
     record = get_user_record(session_email)
     if not record:
-        reset_auth_state()
-        clear_auth_session()
+        print(f"[AUTH] No database record for {session_email}. Invalidating session.")
+        clear_all_auth_state()
         set_page("home")
-        return
+        st.rerun()
 
     record_last_login = record.get("last_login")
     if not record_last_login:
-        reset_auth_state()
-        clear_auth_session()
+        print(f"[AUTH] No last_login record for {session_email}. Invalidating session.")
+        clear_all_auth_state()
         set_page("home")
-        return
+        st.rerun()
 
     try:
         if parse_timestamp(record_last_login) != parse_timestamp(issued_at):
-            reset_auth_state()
-            clear_auth_session()
+            print(f"[AUTH] Session mismatch for {session_email}. Token: {issued_at}, DB: {record_last_login}")
+            clear_all_auth_state()
             set_page("home")
-            return
-    except Exception:
-        reset_auth_state()
-        clear_auth_session()
+            st.rerun()
+    except Exception as e:
+        print(f"[AUTH] Timestamp parse error for {session_email}: {str(e)}")
+        clear_all_auth_state()
         set_page("home")
-        return
+        st.rerun()
 
     st.session_state.user_email = session_email
     st.session_state.authenticated = True
@@ -980,13 +994,10 @@ def sync_access_state():
 
     record = get_user_record(user_email)
     if not record:
-        st.session_state.approved = False
-        st.session_state.payment_done = False
-        st.session_state.access_status = "expired"
-        st.session_state.user = {}
-        if st.session_state.authenticated:
-            set_page("payment")
-        return
+        print(f"[LIFECYCLE] User {user_email} not found in DB during sync. Revoking access.")
+        clear_all_auth_state()
+        set_page("home")
+        st.rerun()
 
     st.session_state.user = record
     st.session_state.approved = bool(record.get("approved"))
@@ -997,7 +1008,6 @@ def sync_access_state():
         st.session_state.payment_done = bool(record.get("payment_done", True))
         try:
             raw_end = str(record["end_date"]).replace("Z", "")
-            # Parse date and normalize to end of day UTC
             if " " in raw_end:
                 end_date = datetime.fromisoformat(raw_end.split(" ")[0])
             elif "T" in raw_end:
@@ -1005,25 +1015,26 @@ def sync_access_state():
             else:
                 end_date = datetime.fromisoformat(raw_end)
             
-            # Normalize to 23:59:59 UTC of that day
+            # Normalize to 23:59:59 UTC
             end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-            
             st.session_state.expiry_display = end_date.strftime("%Y-%m-%d")
             
             if end_date < datetime.now(timezone.utc):
+                print(f"[LIFECYCLE] User {user_email} access expired on {end_date}")
                 st.session_state.approved = False
                 st.session_state.payment_done = False
                 st.session_state.access_status = "expired"
-                set_page("payment")
-                save_user_record(user_email, {"approved": False, "payment_done": False})
-                log_access_event(user_email, "expiry")
+                if st.session_state.page == "dashboard":
+                    set_page("payment")
+                    st.rerun()
                 return
         except Exception as e:
-            st.error(f"Expiry sync error: {str(e)}")
+            print(f"[LIFECYCLE] Date parsing error for {user_email}: {str(e)}")
             st.session_state.approved = False
-            st.session_state.payment_done = False
             st.session_state.access_status = "expired"
-            set_page("payment")
+            if st.session_state.page == "dashboard":
+                set_page("payment")
+                st.rerun()
             return
     else:
         st.session_state.payment_done = bool(record.get("payment_done", False))
@@ -1035,6 +1046,12 @@ def sync_access_state():
         st.session_state.access_status = "pending"
     else:
         st.session_state.access_status = "pending"
+
+    # Final enforcement: if on dashboard but not approved, redirect
+    if st.session_state.page == "dashboard" and not st.session_state.approved:
+        print(f"[LIFECYCLE] Unauthorized dashboard access attempt by {user_email}")
+        set_page("payment")
+        st.rerun()
 
 
 restore_session()
@@ -1207,12 +1224,24 @@ def render_landing_page():
             unsafe_allow_html=True,
         )
         st.markdown("<div class='cta-wrapper'>", unsafe_allow_html=True)
+        
         if st.session_state.authenticated:
-            if st.button("Enter Intelligence Workspace →", key="workspace_cta"):
-                if st.session_state.approved:
-                    set_page("dashboard")
-                else:
-                    set_page("payment")
+            # Lifecycle-aware CTAs
+            if st.session_state.approved:
+                cta_label = "Enter Intelligence Workspace →"
+                target_page = "dashboard"
+            elif st.session_state.access_status == "expired":
+                cta_label = "Renew Access →"
+                target_page = "payment"
+            elif st.session_state.payment_done:
+                cta_label = "Approval Pending..."
+                target_page = "payment"
+            else:
+                cta_label = "Complete Access Setup →"
+                target_page = "payment"
+            
+            if st.button(cta_label, key="workspace_cta"):
+                set_page(target_page)
                 st.rerun()
         else:
             cta_col, login_col = st.columns(2, gap="small")
@@ -1515,8 +1544,8 @@ def render_admin_panel():
     col_logout, col_empty = st.columns([1, 4])
     with col_logout:
         if st.button("Logout Admin", key="admin_logout_btn", use_container_width=True):
-            st.session_state.admin_authenticated = False
-            clear_admin_session()
+            print("[AUTH] Admin logged out.")
+            clear_all_auth_state()
             st.rerun()
 
     try:
@@ -1702,15 +1731,13 @@ def dashboard_page():
         st.markdown(f"Valid until: {expiry_display}")
     with top_right:
         if st.button("Logout"):
+            print(f"[AUTH] User {user_email} logged out.")
             log_access_event(user_email, "logout")
             try:
                 save_user_record(user_email, {"last_login": None})
             except Exception:
                 pass
-            clear_auth_session()
-            clear_route_params()
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            clear_all_auth_state()
             st.rerun()
 
     st.markdown(f"""
