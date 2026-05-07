@@ -930,18 +930,29 @@ def get_user_record(email):
         return None
 
     try:
+        email = str(email).strip().lower()
         response = supabase.table("users_access").select("*").eq("email", email).execute()
+        if response and hasattr(response, "data") and response.data:
+            return response.data[0]
+        return None
     except Exception:
         return None
 
-    if response and hasattr(response, "data") and response.data:
-        return response.data[0]
-    return None
-
 
 def save_user_record(email, payload):
-    supabase.table("users_access").update(payload).eq("email", email).execute()
-    return get_user_record(email)
+    try:
+        email = str(email).strip().lower()
+        res = supabase.table("users_access").update(payload).eq("email", email).execute()
+        
+        # If update returns data, use it. Otherwise re-fetch to confirm.
+        if hasattr(res, "data") and res.data:
+            return res.data[0]
+        
+        # Fallback: re-fetch to verify persistence
+        return get_user_record(email)
+    except Exception as e:
+        st.error(f"Database error: {str(e)}")
+        return None
 
 
 def get_status_markup():
@@ -985,25 +996,30 @@ def sync_access_state():
     if record.get("end_date"):
         st.session_state.payment_done = bool(record.get("payment_done", True))
         try:
-            end_date = datetime.fromisoformat(str(record["end_date"]).replace("Z", "+00:00"))
-            if end_date.tzinfo is None:
-                end_date = end_date.replace(tzinfo=timezone.utc)
-            st.session_state.expiry_display = end_date.astimezone(timezone.utc).strftime("%Y-%m-%d")
+            raw_end = str(record["end_date"]).replace("Z", "")
+            # Parse date and normalize to end of day UTC
+            if " " in raw_end:
+                end_date = datetime.fromisoformat(raw_end.split(" ")[0])
+            elif "T" in raw_end:
+                end_date = datetime.fromisoformat(raw_end.split("T")[0])
+            else:
+                end_date = datetime.fromisoformat(raw_end)
+            
+            # Normalize to 23:59:59 UTC of that day
+            end_date = end_date.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+            
+            st.session_state.expiry_display = end_date.strftime("%Y-%m-%d")
+            
             if end_date < datetime.now(timezone.utc):
                 st.session_state.approved = False
                 st.session_state.payment_done = False
                 st.session_state.access_status = "expired"
                 set_page("payment")
-                try:
-                    save_user_record(
-                        user_email,
-                        {"approved": False, "payment_done": False}
-                    )
-                    log_access_event(user_email, "expiry")
-                except Exception:
-                    pass
+                save_user_record(user_email, {"approved": False, "payment_done": False})
+                log_access_event(user_email, "expiry")
                 return
-        except Exception:
+        except Exception as e:
+            st.error(f"Expiry sync error: {str(e)}")
             st.session_state.approved = False
             st.session_state.payment_done = False
             st.session_state.access_status = "expired"
@@ -1557,48 +1573,57 @@ def render_admin_panel():
                 if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
                     start_date = today.date().isoformat()
                     end_date = (today + timedelta(days=28)).date().isoformat()
-                    try:
-                        updated = save_user_record(email, {
-                            "approved": True,
-                            "payment_done": True,
-                            "start_date": start_date,
-                            "end_date": end_date,
-                            "is_active": True,
-                        })
-                        if updated and updated.get("approved") is True:
-                            log_access_event(email, "approval")
-                            st.rerun()
-                    except Exception: pass
+                    payload = {
+                        "approved": True,
+                        "payment_done": True,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "is_active": True,
+                    }
+                    updated = save_user_record(email, payload)
+                    if updated and updated.get("approved") is True:
+                        log_access_event(email, "approval")
+                        st.success(f"Successfully approved {email}")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to approve {email}. Persistence failed.")
 
             with btn_cols[1]:
                 if st.button("Revoke", key=f"revoke_{idx}", use_container_width=True):
-                    try:
-                        updated = save_user_record(email, {"approved": False, "is_active": False})
-                        if updated and updated.get("approved") is False:
-                            log_access_event(email, "revoke")
-                            st.rerun()
-                    except Exception: pass
+                    payload = {"approved": False, "is_active": False}
+                    updated = save_user_record(email, payload)
+                    if updated and updated.get("approved") is False:
+                        log_access_event(email, "revoke")
+                        st.success(f"Successfully revoked {email}")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to revoke {email}. Persistence failed.")
 
             with btn_cols[2]:
                 if st.button("Extend 28d", key=f"extend_{idx}", use_container_width=True):
-                    try:
-                        current_end = record.get("end_date")
-                        if current_end:
+                    current_end = record.get("end_date")
+                    if current_end:
+                        try:
                             parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
                             if parsed_end.tzinfo is None:
                                 parsed_end = parsed_end.replace(tzinfo=timezone.utc)
-                        else:
+                        except Exception:
                             parsed_end = today
-                        new_end = (parsed_end + timedelta(days=28)).date().isoformat()
-                        updated = save_user_record(email, {
-                            "end_date": new_end,
-                            "approved": True,
-                            "payment_done": True,
-                        })
-                        if updated and str(updated.get("end_date")) == new_end:
-                            log_access_event(email, "extend_access")
-                            st.rerun()
-                    except Exception: pass
+                    else:
+                        parsed_end = today
+                    new_end = (parsed_end + timedelta(days=28)).date().isoformat()
+                    payload = {
+                        "end_date": new_end,
+                        "approved": True,
+                        "payment_done": True,
+                    }
+                    updated = save_user_record(email, payload)
+                    if updated and str(updated.get("end_date")) == new_end:
+                        log_access_event(email, "extend_access")
+                        st.success(f"Successfully extended {email} to {new_end}")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to extend {email}. Persistence failed.")
         
         st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.04); margin: 8px 0;"></div>', unsafe_allow_html=True)
     
