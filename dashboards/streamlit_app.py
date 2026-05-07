@@ -1005,7 +1005,9 @@ def sync_access_state():
     st.session_state.company_type = record.get("company_type") or st.session_state.company_type
 
     if record.get("end_date"):
-        st.session_state.payment_done = bool(record.get("payment_done", True))
+        # If there is an end_date, we treat payment as done regardless of the flag
+        # as the admin set a subscription period.
+        st.session_state.payment_done = True 
         try:
             raw_end = str(record["end_date"]).replace("Z", "")
             if " " in raw_end:
@@ -1024,8 +1026,10 @@ def sync_access_state():
                 st.session_state.approved = False
                 st.session_state.payment_done = False
                 st.session_state.access_status = "expired"
+                # If expired, we should stay on payment or home, but not dashboard
                 if st.session_state.page == "dashboard":
-                    set_page("payment")
+                    st.session_state.page = "payment"
+                    st.query_params["page"] = "payment"
                     st.rerun()
                 return
         except Exception as e:
@@ -1033,10 +1037,12 @@ def sync_access_state():
             st.session_state.approved = False
             st.session_state.access_status = "expired"
             if st.session_state.page == "dashboard":
-                set_page("payment")
+                st.session_state.page = "payment"
+                st.query_params["page"] = "payment"
                 st.rerun()
             return
     else:
+        # If no end_date, respect the database flag
         st.session_state.payment_done = bool(record.get("payment_done", False))
         st.session_state.expiry_display = "Not specified"
 
@@ -1047,11 +1053,13 @@ def sync_access_state():
     else:
         st.session_state.access_status = "pending"
 
-    # Final enforcement: if on dashboard but not approved, redirect
-    if st.session_state.page == "dashboard" and not st.session_state.approved:
-        print(f"[LIFECYCLE] Unauthorized dashboard access attempt by {user_email}")
-        set_page("payment")
-        st.rerun()
+# Final enforcement: if on dashboard but not approved, redirect
+if st.session_state.page == "dashboard" and not st.session_state.approved:
+    print(f"[LIFECYCLE] Unauthorized dashboard access attempt by {user_email}")
+    # Only redirect if they aren't approved - but first sync page to state
+    st.session_state.page = "payment"
+    st.query_params["page"] = "payment"
+    st.rerun()
 
 
 restore_session()
