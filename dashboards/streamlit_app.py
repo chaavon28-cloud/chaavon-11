@@ -862,32 +862,27 @@ def restore_session():
     session_email = str(payload.get("email", "")).strip().lower()
     issued_at = payload.get("issued_at")
     if not session_email or not issued_at:
-        print(f"[AUTH] Invalid session payload for {session_email}")
         clear_all_auth_state()
         return
 
     record = get_user_record(session_email)
     if not record:
-        print(f"[AUTH] No database record for {session_email}. Invalidating session.")
         clear_all_auth_state()
         set_page("home")
         st.rerun()
 
     record_last_login = record.get("last_login")
     if not record_last_login:
-        print(f"[AUTH] No last_login record for {session_email}. Invalidating session.")
         clear_all_auth_state()
         set_page("home")
         st.rerun()
 
     try:
         if parse_timestamp(record_last_login) != parse_timestamp(issued_at):
-            print(f"[AUTH] Session mismatch for {session_email}. Token: {issued_at}, DB: {record_last_login}")
             clear_all_auth_state()
             set_page("home")
             st.rerun()
-    except Exception as e:
-        print(f"[AUTH] Timestamp parse error for {session_email}: {str(e)}")
+    except Exception:
         clear_all_auth_state()
         set_page("home")
         st.rerun()
@@ -1062,7 +1057,6 @@ def sync_access_state():
 
     record = get_user_record(user_email)
     if not record:
-        print(f"[LIFECYCLE] User {user_email} not found in DB. Clearing state.")
         clear_all_auth_state()
         set_page("home")
         st.rerun()
@@ -1083,7 +1077,6 @@ def sync_access_state():
 
     # Gating enforcement for Workspace
     if st.session_state.page == "workspace" and not state["has_workspace_access"]:
-        print(f"[LIFECYCLE] {user_email} access denied to workspace. Status: {state['status']}")
         set_page("payment")
         st.rerun()
     
@@ -1095,7 +1088,6 @@ def sync_access_state():
 
 # Final enforcement: if on workspace but not approved, redirect
 if st.session_state.page == "workspace" and not st.session_state.approved:
-    print(f"[LIFECYCLE] Unauthorized workspace access attempt")
     st.session_state.page = "payment"
     st.query_params["page"] = "payment"
     st.rerun()
@@ -1593,7 +1585,10 @@ def render_payment_page():
 def render_admin_panel():
     st.markdown("### Operational Control")
     
-    tab_users, tab_requests = st.tabs(["User Access", "Intelligence Requests"])
+    # Initialize report_path to avoid UnboundLocalError
+    report_path = None
+    
+    tab_users, tab_requests, tab_archived = st.tabs(["User Access", "Intelligence Requests", "Archived Requests"])
 
     with tab_users:
         st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Manage platform access, approvals, and subscription cycles.</div>', unsafe_allow_html=True)
@@ -1731,16 +1726,77 @@ def render_admin_panel():
         st.markdown("### Maritime Intelligence Queue")
         
         try:
-            res = supabase.table("intelligence_requests").select("*").order("created_at", desc=True).execute()
+            res = supabase.table("intelligence_requests").select("*").eq("archived", False).order("created_at", desc=True).execute()
             all_reqs = res.data or []
-        except Exception as e:
-            st.error(f"Could not load intelligence queue: {str(e)}")
-            all_reqs = []
+        except Exception:
+            # Fallback for when column doesn't exist yet
+            try:
+                res = supabase.table("intelligence_requests").select("*").order("created_at", desc=True).execute()
+                all_reqs = res.data or []
+            except Exception as e:
+                st.error(f"Could not load intelligence queue: {str(e)}")
+                all_reqs = []
 
         if not all_reqs:
-            st.info("No intelligence requests pending.")
+            st.info("No active intelligence requests pending.")
         else:
             for req in all_reqs:
+                # ... existing logic ...
+                # Add Archive button for Delivered requests
+                if req.get("status") == "Delivered":
+                    if st.button("Archive Request", key=f"archive_{req.get('id')}", use_container_width=True):
+                        try:
+                            supabase.table("intelligence_requests").update({
+                                "archived": True,
+                                "archived_at": datetime.now(timezone.utc).isoformat()
+                            }).eq("id", req.get("id")).execute()
+                            st.success("Request archived.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Archive failed: {str(e)}")
+
+    with tab_archived:
+        st.markdown("### Institutional Archive")
+        try:
+            res = supabase.table("intelligence_requests").select("*").eq("archived", True).order("archived_at", desc=True).execute()
+            archived_reqs = res.data or []
+        except Exception:
+            archived_reqs = []
+
+        if not archived_reqs:
+            st.info("No archived requests.")
+        else:
+            for req in archived_reqs:
+                with st.expander(f"📦 {req.get('vessel_name')} (Archived: {req.get('archived_at', '')[:10]})", expanded=False):
+                    st.write(f"**ID:** `{req.get('id')}` | **User:** {req.get('submitted_by')}")
+                    if st.button("Restore to Active Queue", key=f"restore_{req.get('id')}", use_container_width=True):
+                        try:
+                            supabase.table("intelligence_requests").update({
+                                "archived": False,
+                                "archived_at": None
+                            }).eq("id", req.get("id")).execute()
+                            st.success("Request restored.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Restore failed: {str(e)}")
+                    
+                    # Also show download link in archive
+                    report_path = req.get("report_path")
+                    report_storage_url = req.get("report_storage_url")
+                    if report_storage_url:
+                        st.link_button("Download Report (Cloud)", report_storage_url, use_container_width=True)
+                    elif report_path and os.path.exists(report_path):
+                        with open(report_path, "rb") as f:
+                            st.download_button(
+                                label="Download Local Report",
+                                data=f.read(),
+                                file_name=os.path.basename(report_path),
+                                mime="application/pdf",
+                                key=f"dl_admin_archived_{req.get('id')}",
+                                use_container_width=True
+                            )
+                    else:
+                        st.warning("Archived report file unavailable on current instance")
                 # SLA and Request Age
                 created_at_raw = req.get("created_at")
                 if created_at_raw:
@@ -1799,7 +1855,8 @@ def render_admin_panel():
                                         "status": new_status,
                                         "risk_level": risk_lvl,
                                         "analyst_notes": analyst_notes,
-                                        "delivered_at": datetime.now(timezone.utc).isoformat() if new_status == "Delivered" else req.get("delivered_at")
+                                        "delivered_at": datetime.now(timezone.utc).isoformat() if new_status == "Delivered" else req.get("delivered_at"),
+                                        "archived": False # Reset archive if status changes
                                     }).eq("id", req.get("id")).execute()
                                     st.success("Status updated.")
                                     st.rerun()
@@ -1943,38 +2000,65 @@ def render_admin_panel():
                                 try:
                                     import os
                                     # Versioning
-                                    current_version = int(req.get("report_version", 0)) + 1
+                                    current_version = int(req.get("report_version") or 0) + 1
                                     
                                     # Generate PDF
-                                    pdf_bytes = generate_pdf(req, req) # Pass req as both vessel_data and match_data for now
+                                    pdf_bytes = generate_pdf(req, req) 
                                     
                                     # Archival
                                     if not os.path.exists("generated_reports"):
                                         os.makedirs("generated_reports")
                                     
-                                    filename = f"ChaAVON_Report_{req.get('vessel_name').replace(' ', '_')}_{req.get('imo_number') or 'NOIMO'}_v{current_version}.pdf"
+                                    v_name = (req.get('vessel_name') or 'Unknown').replace(' ', '_')
+                                    imo = req.get('imo_number') or 'NOIMO'
+                                    filename = f"ChaAVON_Report_{v_name}_{imo}_v{current_version}.pdf"
                                     filepath = os.path.join("generated_reports", filename)
                                     
                                     with open(filepath, "wb") as f:
                                         f.write(pdf_bytes)
                                     
+                                    # Cloud Storage Upload
+                                    storage_url = None
+                                    try:
+                                        bucket_name = "generated-reports"
+                                        # Ensure unique cloud filename
+                                        cloud_filename = f"{req.get('id')}_{filename}"
+                                        
+                                        # Simple binary upload
+                                        supabase.storage.from_(bucket_name).upload(
+                                            path=cloud_filename,
+                                            file=pdf_bytes,
+                                            file_options={"content-type": "application/pdf"}
+                                        )
+                                        
+                                        # Get public URL
+                                        res_url = supabase.storage.from_(bucket_name).get_public_url(cloud_filename)
+                                        if res_url:
+                                            storage_url = res_url
+                                    except Exception as e:
+                                        print(f"[STORAGE] Upload failed: {str(e)}")
+                                    
                                     # Update Supabase
-                                    supabase.table("intelligence_requests").update({
+                                    update_payload = {
                                         "report_version": current_version,
                                         "report_path": filepath,
                                         "updated_at": datetime.now(timezone.utc).isoformat()
-                                    }).eq("id", req.get("id")).execute()
+                                    }
+                                    if storage_url:
+                                        update_payload["report_storage_url"] = storage_url
+
+                                    supabase.table("intelligence_requests").update(update_payload).eq("id", req.get("id")).execute()
                                     
-                                    st.success(f"Report v{current_version} generated and archived.")
+                                    st.success(f"Report v{current_version} generated and archived (Cloud: {'Yes' if storage_url else 'Local Only'}).")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Generation failed: {str(e)}")
 
                     with gen_col2:
-                        if req.get("report_path"):
+                        report_path = req.get("report_path")
+                        if report_path:
                             st.write(f"Current Version: v{req.get('report_version')}")
-                            report_path = req.get("report_path")
-                            if report_path and os.path.exists(report_path):
+                            if os.path.exists(report_path):
                                 with open(report_path, "rb") as f:
                                     st.download_button(
                                         label="Download Archived Report",
@@ -1985,6 +2069,8 @@ def render_admin_panel():
                                     )
                             else:
                                 st.info("Archived report file is not available on this instance yet. Regenerate the report to restore local download access.")
+                        else:
+                            st.info("No report generated for this request yet.")
 
 
 def render_admin_page():
@@ -2149,7 +2235,11 @@ def render_workspace_page():
                         st.write(f"**IMO:** {r.get('imo_number') or 'N/A'}")
                         
                         report_path = r.get("report_path")
-                        if report_path and os.path.exists(report_path):
+                        report_storage_url = r.get("report_storage_url")
+
+                        if report_storage_url:
+                            st.link_button("Download Intelligence Report (Cloud)", report_storage_url, use_container_width=True)
+                        elif report_path and os.path.exists(report_path):
                             with open(report_path, "rb") as f:
                                 st.download_button(
                                     label=f"Download Intelligence Report (PDF)",
