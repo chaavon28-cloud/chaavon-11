@@ -2013,7 +2013,10 @@ def render_analyst_workspace(req):
             if st.button("Generate Institutional Report", key=f"gen_{req.get('id')}", use_container_width=True):
                 with st.spinner("Compiling institutional report..."):
                     try:
-                        current_version = int(req.get("report_version") or 0) + 1
+                        # Safe versioning
+                        v_raw = req.get("report_version")
+                        current_version = int(v_raw) + 1 if v_raw is not None else 1
+                        
                         pdf_bytes = generate_pdf(req, req) 
                         
                         if not os.path.exists("generated_reports"):
@@ -2037,7 +2040,8 @@ def render_analyst_workspace(req):
                             )
                             storage_url = supabase.storage.from_(bucket_name).get_public_url(cloud_filename)
                         except Exception as e:
-                            print(f"[STORAGE] Upload failed: {str(e)}")
+                            # Log but don't crash
+                            st.warning(f"Cloud upload failed: {str(e)}")
                         
                         update_payload = {
                             "report_version": current_version,
