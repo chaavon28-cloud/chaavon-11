@@ -59,22 +59,26 @@ st.markdown(
         background-color: #000000 !important;
     }
     
-    # Hide Streamlit elements
-    [data-testid="stSidebarNav"] {display: none;}
-    [data-testid="stNotification"] {border-radius: 4px; border: 1px solid var(--line);}
-    [data-testid="stHeader"] {display: none;}
-    [data-testid="stAppDeployButton"] {display: none;}
-    footer {display: none;}
-    #MainMenu {visibility: hidden;}
+    /* Absolute Streamlit Noise Removal */
+    [data-testid="stSidebarNav"], 
+    [data-testid="stHeader"], 
+    [data-testid="stAppDeployButton"],
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    footer, 
+    #MainMenu {
+        display: none !important;
+        visibility: hidden !important;
+    }
     
-    /* Professional Terminal Aesthetic */
+    /* Manage app button removal */
+    button[kind="header"] { display: none !important; }
+    
+    /* Institutional Terminal Aesthetic */
     .stApp {
         background-color: #000000 !important;
     }
-    
-    /* Remove Hamburger & Clutter */
-    button[kind="header"] {display: none !important;}
-    .stAppDeployButton {display: none !important;}
     
     /* Dark Terminal Inputs */
     div[data-testid="stTextInput"] input, 
@@ -1839,6 +1843,8 @@ def render_user_table(users, archived_view=False):
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_analyst_workspace(req):
+    req_id = req.get("id")
+    
     # SLA and Request Age
     created_at_raw = req.get("created_at")
     try:
@@ -1857,8 +1863,22 @@ def render_analyst_workspace(req):
         "Delivered": "⚪"
     }.get(req.get("status"), "⚪")
 
+    # Initialize autosave session state if not present
+    autosave_key = f"autosave_{req_id}"
+    if autosave_key not in st.session_state:
+        st.session_state[autosave_key] = {
+            "findings": req.get("sanctions_findings") or "",
+            "ownership": req.get("ownership_analysis") or "",
+            "ais_review": req.get("ais_behavior_review") or "",
+            "narrative": req.get("analyst_narrative") or "",
+            "recommendation": req.get("compliance_recommendation") or "",
+            "analyst_name": req.get("analyst_name") or "",
+            "risk_lvl": req.get("risk_level") or "Medium",
+            "confidence": req.get("confidence_level") or "Medium"
+        }
+
     with st.expander(f"{status_color} {req.get('vessel_name')} ({req.get('status')}) — Age: {age_str}", expanded=False):
-        st.markdown(f"**Request ID:** `{req.get('id')}` | **User:** {req.get('submitted_by')}")
+        st.markdown(f"**Request ID:** `{req_id}` | **User:** {req.get('submitted_by')}")
         
         # --- SECTION 1: VESSEL PROFILE ---
         st.markdown("#### SECTION 1 — Vessel Profile")
@@ -1878,47 +1898,84 @@ def render_analyst_workspace(req):
         
         # --- SECTION 2: ANALYST ENRICHMENT ---
         st.markdown("#### SECTION 2 — Analyst Enrichment")
-        with st.form(f"enrichment_form_{req.get('id')}"):
-            e_col1, e_col2 = st.columns(2)
-            with e_col1:
-                status = st.selectbox("Update Status", 
-                    ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"],
-                    index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"].index(req.get("status", "Pending Review"))
-                )
-                risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
-                    index=["Low", "Medium", "High"].index(req.get("risk_level", "Medium"))
-                )
-            with e_col2:
-                analyst_name = st.text_input("Analyst Assigned", value=req.get("analyst_name") or "")
-                confidence = st.select_slider("Confidence Level", options=["Low", "Medium", "High"], value=req.get("confidence_level", "Medium"))
+        
+        # Helper for autosave
+        def on_change_autosave(field):
+            st.session_state[autosave_key][field] = st.session_state[f"{field}_{req_id}"]
 
-            findings = st.text_area("Sanctions Findings", value=req.get("sanctions_findings") or "")
-            ownership = st.text_area("Ownership Analysis", value=req.get("ownership_analysis") or "")
-            ais_review = st.text_area("AIS Behavior Review", value=req.get("ais_behavior_review") or "")
-            narrative = st.text_area("Analyst Narrative (Executive Summary)", value=req.get("analyst_narrative") or "")
-            recommendation = st.text_area("Compliance Recommendation", value=req.get("compliance_recommendation") or "")
-            
-            if st.form_submit_button("SAVE ANALYST WORKSPACE"):
-                try:
-                    update_data = {
-                        "status": status,
-                        "risk_level": risk_lvl,
-                        "analyst_name": analyst_name,
-                        "confidence_level": confidence,
-                        "sanctions_findings": findings,
-                        "ownership_analysis": ownership,
-                        "ais_behavior_review": ais_review,
-                        "analyst_narrative": narrative,
-                        "compliance_recommendation": recommendation,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                        "delivered_at": datetime.now(timezone.utc).isoformat() if status == "Delivered" else req.get("delivered_at"),
-                        "archived": False
-                    }
-                    supabase.table("intelligence_requests").update(update_data).eq("id", req.get("id")).execute()
-                    st.success("Analyst workspace persisted successfully.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Save failed: {str(e)}")
+        e_col1, e_col2 = st.columns(2)
+        with e_col1:
+            status = st.selectbox("Update Status", 
+                ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"],
+                index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"].index(req.get("status", "Pending Review")),
+                key=f"status_{req_id}"
+            )
+            risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
+                index=["Low", "Medium", "High"].index(st.session_state[autosave_key]["risk_lvl"]),
+                key=f"risk_lvl_{req_id}",
+                on_change=on_change_autosave, args=("risk_lvl",)
+            )
+        with e_col2:
+            analyst_name = st.text_input("Analyst Assigned", 
+                value=st.session_state[autosave_key]["analyst_name"],
+                key=f"analyst_name_{req_id}",
+                on_change=on_change_autosave, args=("analyst_name",)
+            )
+            confidence = st.select_slider("Confidence Level", 
+                options=["Low", "Medium", "High"], 
+                value=st.session_state[autosave_key]["confidence"],
+                key=f"confidence_{req_id}",
+                on_change=on_change_autosave, args=("confidence",)
+            )
+
+        findings = st.text_area("Sanctions Findings", 
+            value=st.session_state[autosave_key]["findings"],
+            key=f"findings_{req_id}",
+            on_change=on_change_autosave, args=("findings",)
+        )
+        ownership = st.text_area("Ownership Analysis", 
+            value=st.session_state[autosave_key]["ownership"],
+            key=f"ownership_{req_id}",
+            on_change=on_change_autosave, args=("ownership",)
+        )
+        ais_review = st.text_area("AIS Behavior Review", 
+            value=st.session_state[autosave_key]["ais_review"],
+            key=f"ais_review_{req_id}",
+            on_change=on_change_autosave, args=("ais_review",)
+        )
+        narrative = st.text_area("Analyst Narrative (Executive Summary)", 
+            value=st.session_state[autosave_key]["narrative"],
+            key=f"narrative_{req_id}",
+            on_change=on_change_autosave, args=("narrative",)
+        )
+        recommendation = st.text_area("Compliance Recommendation", 
+            value=st.session_state[autosave_key]["recommendation"],
+            key=f"recommendation_{req_id}",
+            on_change=on_change_autosave, args=("recommendation",)
+        )
+        
+        if st.button("PERSIST ANALYST DATA TO DATABASE", key=f"save_btn_{req_id}"):
+            try:
+                # Sync session state to dict for update
+                s = st.session_state[autosave_key]
+                update_data = {
+                    "status": status,
+                    "risk_level": s["risk_lvl"],
+                    "analyst_name": s["analyst_name"],
+                    "confidence_level": s["confidence"],
+                    "sanctions_findings": s["findings"],
+                    "ownership_analysis": s["ownership"],
+                    "ais_behavior_review": s["ais_review"],
+                    "analyst_narrative": s["narrative"],
+                    "compliance_recommendation": s["recommendation"],
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "delivered_at": datetime.now(timezone.utc).isoformat() if status == "Delivered" else req.get("delivered_at"),
+                    "archived": False
+                }
+                supabase.table("intelligence_requests").update(update_data).eq("id", req_id).execute()
+                st.success("Analyst workspace successfully persisted to institutional records.")
+            except Exception as e:
+                st.error(f"Persistence failed: {str(e)}")
 
         # --- SUB-SECTIONS ---
         enrich_tabs = st.tabs(["Timeline Builder", "Source Citations", "Port Calls", "Ownership History", "Evidence Appendix"])
@@ -1929,13 +1986,13 @@ def render_analyst_workspace(req):
             for item in timeline:
                 st.write(f"• {item.get('date')} | {item.get('event')} ({item.get('jurisdiction')})")
             
-            with st.form(f"timeline_form_{req.get('id')}"):
+            with st.form(f"timeline_form_{req_id}"):
                 t_date = st.date_input("Date")
                 t_event = st.text_input("Event")
                 t_juris = st.text_input("Jurisdiction")
                 if st.form_submit_button("Add Timeline Entry"):
                     timeline.append({"date": t_date.isoformat(), "event": t_event, "jurisdiction": t_juris})
-                    supabase.table("intelligence_requests").update({"timeline_events": timeline}).eq("id", req.get("id")).execute()
+                    supabase.table("intelligence_requests").update({"timeline_events": timeline}).eq("id", req_id).execute()
                     st.rerun()
 
         with enrich_tabs[1]:
@@ -1944,13 +2001,13 @@ def render_analyst_workspace(req):
             for c in citations:
                 st.write(f"• [{c.get('source')}]({c.get('url')}) - {c.get('observation')}")
             
-            with st.form(f"citation_form_{req.get('id')}"):
+            with st.form(f"citation_form_{req_id}"):
                 c_src = st.text_input("Source")
                 c_url = st.text_input("URL")
                 c_obs = st.text_area("Observation")
                 if st.form_submit_button("Add Citation"):
                     citations.append({"source": c_src, "url": c_url, "observation": c_obs, "access_date": datetime.now(timezone.utc).isoformat()})
-                    supabase.table("intelligence_requests").update({"citations": citations}).eq("id", req.get("id")).execute()
+                    supabase.table("intelligence_requests").update({"citations": citations}).eq("id", req_id).execute()
                     st.rerun()
 
         with enrich_tabs[2]:
@@ -1959,7 +2016,7 @@ def render_analyst_workspace(req):
             for p in port_calls:
                 st.write(f"• {p.get('port')} ({p.get('arrival')} - {p.get('departure')}) | Risk: {p.get('risk') or 'Low'}")
             
-            with st.form(f"port_form_{req.get('id')}"):
+            with st.form(f"port_form_{req_id}"):
                 p_name = st.text_input("Port")
                 p_col1, p_col2 = st.columns(2)
                 with p_col1: p_arr = st.date_input("Arrival")
@@ -1967,7 +2024,7 @@ def render_analyst_workspace(req):
                 p_risk = st.selectbox("Risk Level", ["Low", "Medium", "High", "Critical"])
                 if st.form_submit_button("Add Port Call"):
                     port_calls.append({"port": p_name, "arrival": p_arr.isoformat(), "departure": p_dep.isoformat(), "risk": p_risk})
-                    supabase.table("intelligence_requests").update({"port_calls": port_calls}).eq("id", req.get("id")).execute()
+                    supabase.table("intelligence_requests").update({"port_calls": port_calls}).eq("id", req_id).execute()
                     st.rerun()
 
         with enrich_tabs[3]:
@@ -1976,7 +2033,7 @@ def render_analyst_workspace(req):
             for o in ownership:
                 st.write(f"• {o.get('company')} ({o.get('jurisdiction')}) | {o.get('start')} - {o.get('end') or 'Current'}")
             
-            with st.form(f"owner_form_{req.get('id')}"):
+            with st.form(f"owner_form_{req_id}"):
                 o_comp = st.text_input("Company")
                 o_juris = st.text_input("Jurisdiction")
                 o_col1, o_col2 = st.columns(2)
@@ -1984,12 +2041,12 @@ def render_analyst_workspace(req):
                 with o_col2: o_end = st.date_input("End (optional)")
                 if st.form_submit_button("Add Ownership Record"):
                     ownership.append({"company": o_comp, "jurisdiction": o_juris, "start": o_start.isoformat(), "end": o_end.isoformat() if o_end else None})
-                    supabase.table("intelligence_requests").update({"ownership_history": ownership}).eq("id", req.get("id")).execute()
+                    supabase.table("intelligence_requests").update({"ownership_history": ownership}).eq("id", req_id).execute()
                     st.rerun()
 
         with enrich_tabs[4]:
             st.write("**Evidence Appendix**")
-            with st.form(f"evidence_form_{req.get('id')}"):
+            with st.form(f"evidence_form_{req_id}"):
                 shell_indicators = st.text_area("Shell Company Indicators", value=req.get("shell_company_indicators") or "")
                 sts_obs = st.text_area("STS Transfer Observations", value=req.get("sts_transfer_observations") or "")
                 risk_json = st.text_area("Risk Matrix Data (JSON)", value=json.dumps(req.get("risk_indicators") or []))
@@ -2000,48 +2057,67 @@ def render_analyst_workspace(req):
                             "shell_company_indicators": shell_indicators,
                             "sts_transfer_observations": sts_obs,
                             "risk_indicators": json.loads(risk_json)
-                        }).eq("id", req.get("id")).execute()
+                        }).eq("id", req_id).execute()
                         st.success("Evidence appendix persisted.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Save failed: {str(e)}")
 
         st.markdown("---")
-        st.markdown("#### Report Controls")
+        st.markdown("#### Intelligence Memorandum Controls")
         gen_col1, gen_col2, gen_col3 = st.columns(3)
         with gen_col1:
-            if st.button("Generate Institutional Report", key=f"gen_{req.get('id')}", use_container_width=True):
-                with st.spinner("Compiling institutional report..."):
+            if st.button("Generate Institutional Memorandum", key=f"gen_{req_id}", use_container_width=True):
+                # Save session state to database first to ensure PDF has latest data
+                s = st.session_state[autosave_key]
+                update_before_gen = {
+                    "risk_level": s["risk_lvl"],
+                    "analyst_name": s["analyst_name"],
+                    "confidence_level": s["confidence"],
+                    "sanctions_findings": s["findings"],
+                    "ownership_analysis": s["ownership"],
+                    "ais_behavior_review": s["ais_review"],
+                    "analyst_narrative": s["narrative"],
+                    "compliance_recommendation": s["recommendation"]
+                }
+                supabase.table("intelligence_requests").update(update_before_gen).eq("id", req_id).execute()
+                
+                with st.spinner("Synthesizing institutional intelligence memorandum..."):
                     try:
-                        # Safe versioning
-                        v_raw = req.get("report_version")
+                        # Refresh data from DB to be certain
+                        fresh_req = supabase.table("intelligence_requests").select("*").eq("id", req_id).single().execute().data
+                        
+                        v_raw = fresh_req.get("report_version")
                         current_version = int(v_raw) + 1 if v_raw is not None else 1
                         
-                        pdf_bytes = generate_pdf(req, req) 
+                        # GENERATE LOCALLY FIRST
+                        pdf_bytes = generate_pdf(fresh_req, fresh_req) 
                         
                         if not os.path.exists("generated_reports"):
                             os.makedirs("generated_reports")
                         
-                        v_name = (req.get('vessel_name') or 'Unknown').replace(' ', '_')
+                        v_name = (fresh_req.get('vessel_name') or 'Unknown').replace(' ', '_')
                         filename = f"ChaAVON_Intel_{v_name}_v{current_version}.pdf"
                         filepath = os.path.join("generated_reports", filename)
                         
                         with open(filepath, "wb") as f:
                             f.write(pdf_bytes)
                         
-                        # Cloud Upload
+                        st.success(f"LOCAL BUILD SUCCESS: Memorandum v{current_version} generated.")
+                        
+                        # CLOUD UPLOAD SECOND
                         storage_url = None
                         try:
                             bucket_name = "generated-reports"
-                            cloud_filename = f"{req.get('id')}_v{current_version}_{filename}"
+                            cloud_filename = f"{req_id}_v{current_version}_{filename}"
                             supabase.storage.from_(bucket_name).upload(
                                 path=cloud_filename, file=pdf_bytes,
                                 file_options={"content-type": "application/pdf"}
                             )
                             storage_url = supabase.storage.from_(bucket_name).get_public_url(cloud_filename)
+                            st.success("CLOUD UPLOAD SUCCESS: Intelligence memorandum archived.")
                         except Exception as e:
-                            # Log but don't crash
-                            st.warning(f"Cloud upload failed: {str(e)}")
+                            st.warning(f"CLOUD ARCHIVE FAILED: {str(e)}. Local copy preserved.")
                         
                         update_payload = {
                             "report_version": current_version,
@@ -2051,25 +2127,25 @@ def render_analyst_workspace(req):
                         if storage_url:
                             update_payload["report_storage_url"] = storage_url
 
-                        supabase.table("intelligence_requests").update(update_payload).eq("id", req.get("id")).execute()
-                        st.success(f"Report v{current_version} finalized.")
+                        supabase.table("intelligence_requests").update(update_payload).eq("id", req_id).execute()
+                        st.info("REPORT DELIVERY: Status updated in operational queue.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Generation failed: {str(e)}")
+                        st.error(f"MEMORANDUM SYNTHESIS FAILED: {str(e)}")
 
         with gen_col2:
             report_url = req.get("report_storage_url")
             if report_url:
-                st.link_button("View Cloud Report", report_url, use_container_width=True)
+                st.link_button("Access Cloud Memorandum", report_url, use_container_width=True)
             else:
-                st.info("No cloud archive.")
+                st.info("Cloud archive unavailable.")
 
         with gen_col3:
             if req.get("status") == "Delivered":
-                if st.button("Archive Request", key=f"archive_req_{req.get('id')}", use_container_width=True):
+                if st.button("Archive Request Record", key=f"archive_req_{req_id}", use_container_width=True):
                     supabase.table("intelligence_requests").update({
                         "archived": True, "archived_at": datetime.now(timezone.utc).isoformat()
-                    }).eq("id", req.get("id")).execute()
+                    }).eq("id", req_id).execute()
                     st.rerun()
 
 def render_admin_page():
