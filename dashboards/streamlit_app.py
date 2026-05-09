@@ -1106,8 +1106,8 @@ restore_admin_session()
 sync_access_state()
 
 requested_page = st.query_params.get("page")
-if requested_page in {"home", "login", "register", "payment", "terms", "dashboard", "admin"}:
-    st.session_state.page = str(requested_page)
+if requested_page in {"home", "login", "register", "payment", "terms", "dashboard", "workspace", "admin"}:
+    st.session_state.page = "workspace" if str(requested_page) == "dashboard" else str(requested_page)
 
 if st.session_state.authenticated and st.session_state.page in {"login", "register"}:
     # Use computed state for routing
@@ -1485,7 +1485,7 @@ def render_registration_page():
 
 def render_login_page():
     if st.session_state.authenticated:
-        set_page("dashboard" if st.session_state.approved else "payment")
+        set_page("workspace" if st.session_state.approved else "payment")
         st.rerun()
 
     render_top_nav()
@@ -1544,7 +1544,7 @@ def render_login_page():
         persist_auth_session(email, issued_at)
         sync_access_state()
         if st.session_state.approved:
-            set_page("dashboard")
+            set_page("workspace")
         else:
             set_page("payment")
         st.rerun()
@@ -1552,7 +1552,7 @@ def render_login_page():
 
 def render_payment_page():
     if st.session_state.approved:
-        set_page("dashboard")
+        set_page("workspace")
         st.rerun()
 
     render_top_nav()
@@ -1578,7 +1578,7 @@ def render_payment_page():
         st.success("Payment submitted. Access activates after compliance approval.")
         sync_access_state()
         if st.session_state.approved:
-            set_page("dashboard")
+            set_page("workspace")
         st.rerun()
 
     if st.session_state.payment_done and not st.session_state.approved:
@@ -1973,14 +1973,18 @@ def render_admin_panel():
                     with gen_col2:
                         if req.get("report_path"):
                             st.write(f"Current Version: v{req.get('report_version')}")
-                            with open(req.get("report_path"), "rb") as f:
-                                st.download_button(
-                                    label="Download Archived Report",
-                                    data=f.read(),
-                                    file_name=os.path.basename(req.get("report_path")),
-                                    mime="application/pdf",
-                                    use_container_width=True
-                                )
+                            report_path = req.get("report_path")
+                            if report_path and os.path.exists(report_path):
+                                with open(report_path, "rb") as f:
+                                    st.download_button(
+                                        label="Download Archived Report",
+                                        data=f.read(),
+                                        file_name=os.path.basename(report_path),
+                                        mime="application/pdf",
+                                        use_container_width=True
+                                    )
+                            else:
+                                st.info("Archived report file is not available on this instance yet. Regenerate the report to restore local download access.")
 
 
 def render_admin_page():
@@ -2103,33 +2107,52 @@ def render_workspace_page():
                     st.error(f"Submission failed: {str(e)}")
 
     with right_col:
-        st.markdown("### Your Intelligence Queue")
+        active_tab, archive_tab = st.tabs(["Active Requests", "Archived Reports"])
         
-        try:
-            res = supabase.table("intelligence_requests").select("*").eq("submitted_by", user_email).order("created_at", desc=True).execute()
-            reqs = res.data or []
-        except Exception:
-            reqs = []
-            st.error("Could not load your intelligence queue.")
+        with active_tab:
+            try:
+                res = supabase.table("intelligence_requests").select("*").eq("submitted_by", user_email).neq("status", "Delivered").order("created_at", desc=True).execute()
+                active_reqs = res.data or []
+            except Exception:
+                active_reqs = []
+                st.error("Could not load active requests.")
 
-        if not reqs:
-            st.markdown('<div style="opacity: 0.5; text-align: center; padding-top: 100px;">No active intelligence requests found.</div>', unsafe_allow_html=True)
-        else:
-            for r in reqs:
-                with st.expander(f"{r.get('vessel_name')} — {r.get('status')}", expanded=False):
-                    st.write(f"**Submitted:** {r.get('created_at', '')[:10]}")
-                    st.write(f"**IMO:** {r.get('imo_number') or 'N/A'}")
-                    st.write(f"**Status:** {r.get('status')}")
-                    
-                    if r.get("status") == "Delivered":
-                        st.success("Report is ready for delivery.")
+            if not active_reqs:
+                st.markdown('<div style="opacity: 0.5; text-align: center; padding-top: 50px;">No active requests.</div>', unsafe_allow_html=True)
+            else:
+                for r in active_reqs:
+                    with st.expander(f"{r.get('vessel_name')} — {r.get('status')}", expanded=False):
+                        st.write(f"**Submitted:** {r.get('created_at', '')[:10]}")
+                        st.write(f"**IMO:** {r.get('imo_number') or 'N/A'}")
+                        st.write(f"**Status:** {r.get('status')}")
+                        if r.get("status") == "Under Investigation":
+                            st.info("Analysts are currently enriching vessel information and AIS patterns.")
+                        elif r.get("status") == "Ready for Delivery":
+                            st.success("Analyst review complete. Finalizing delivery.")
+                        else:
+                            st.info("Request is in the global analyst queue.")
+
+        with archive_tab:
+            try:
+                res = supabase.table("intelligence_requests").select("*").eq("submitted_by", user_email).eq("status", "Delivered").order("delivered_at", desc=True).execute()
+                archived_reqs = res.data or []
+            except Exception:
+                archived_reqs = []
+                st.error("Could not load archived reports.")
+
+            if not archived_reqs:
+                st.markdown('<div style="opacity: 0.5; text-align: center; padding-top: 50px;">No archived reports found.</div>', unsafe_allow_html=True)
+            else:
+                for r in archived_reqs:
+                    with st.expander(f"📄 {r.get('vessel_name')} — Report v{r.get('report_version', 1)}", expanded=False):
+                        st.write(f"**Delivered:** {r.get('delivered_at', '')[:10]}")
+                        st.write(f"**IMO:** {r.get('imo_number') or 'N/A'}")
                         
-                        # Use archived report if available
                         report_path = r.get("report_path")
                         if report_path and os.path.exists(report_path):
                             with open(report_path, "rb") as f:
                                 st.download_button(
-                                    label=f"Download Intelligence Report (v{r.get('report_version', 1)})",
+                                    label=f"Download Intelligence Report (PDF)",
                                     data=f.read(),
                                     file_name=os.path.basename(report_path),
                                     mime="application/pdf",
@@ -2137,11 +2160,10 @@ def render_workspace_page():
                                     use_container_width=True
                                 )
                         else:
-                            # Fallback: Generate fresh if archive missing
                             try:
                                 pdf_bytes = generate_pdf(r, r)
                                 st.download_button(
-                                    label=f"Download Intelligence Report (PDF)",
+                                    label=f"Regenerate & Download (PDF)",
                                     data=pdf_bytes,
                                     file_name=f"ChaAVON_Intel_{r.get('vessel_name').replace(' ', '_')}.pdf",
                                     mime="application/pdf",
@@ -2150,10 +2172,6 @@ def render_workspace_page():
                                 )
                             except Exception as e:
                                 st.error(f"Report generation error: {str(e)}")
-                    elif r.get("status") == "Under Investigation":
-                        st.info("Analysts are currently enriching vessel information and AIS patterns.")
-                    else:
-                        st.info("Request is in the global analyst queue.")
 
     # Footer build version
     st.markdown(f'<div style="position: fixed; bottom: 10px; right: 20px; font-size: 10px; color: rgba(255,255,255,0.3);">Build {BUILD_VERSION}</div>', unsafe_allow_html=True)
@@ -2173,6 +2191,8 @@ elif page == "terms":
 elif page == "admin":
     render_admin_page()
 elif page == "workspace":
+    render_workspace_page()
+elif page == "dashboard":
     render_workspace_page()
 else:
     render_landing_page()
