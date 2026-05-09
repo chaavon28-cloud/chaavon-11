@@ -53,6 +53,67 @@ st.markdown(
     [data-testid="stAppHeader"] {display: none;}
     [data-testid="stHeaderActionElements"] {display: none;}
     button[kind="header"] {display: none;}
+    
+    /* Professional Terminal Aesthetic */
+    .stApp {
+        background-color: #000000 !important;
+    }
+    
+    # Hide Streamlit elements
+    [data-testid="stSidebarNav"] {display: none;}
+    [data-testid="stNotification"] {border-radius: 4px; border: 1px solid var(--line);}
+    [data-testid="stHeader"] {display: none;}
+    [data-testid="stAppDeployButton"] {display: none;}
+    footer {display: none;}
+    #MainMenu {visibility: hidden;}
+    
+    /* Professional Terminal Aesthetic */
+    .stApp {
+        background-color: #000000 !important;
+    }
+    
+    /* Remove Hamburger & Clutter */
+    button[kind="header"] {display: none !important;}
+    .stAppDeployButton {display: none !important;}
+    
+    /* Dark Terminal Inputs */
+    div[data-testid="stTextInput"] input, 
+    div[data-testid="stTextArea"] textarea,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+        background-color: #050505 !important;
+        border: 1px solid rgba(0, 96, 57, 0.4) !important;
+        color: #e0e0e0 !important;
+        font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace !important;
+    }
+    
+    /* Institutional Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+        background-color: transparent;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        background-color: transparent !important;
+        border: none !important;
+        color: rgba(255,255,255,0.5) !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
+    }
+    
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: #006039 !important;
+        border-bottom: 2px solid #006039 !important;
+    }
+    
+    /* Removal of toy-like elements */
+    .stBadge, .stExpander {
+        border-radius: 4px !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+    }
 
     :root {
         --bg: #000000;
@@ -1585,142 +1646,58 @@ def render_payment_page():
 def render_admin_panel():
     st.markdown("### Operational Control")
     
-    # Initialize report_path to avoid UnboundLocalError
+    # Initialize variables to avoid UnboundLocalError
     report_path = None
     
-    tab_users, tab_requests, tab_archived = st.tabs(["User Access", "Intelligence Requests", "Archived Requests"])
+    tab_users, tab_requests, tab_archived_reqs, tab_archived_users = st.tabs([
+        "User Access", 
+        "Intelligence Requests", 
+        "Archived Requests",
+        "Archived Access Records"
+    ])
 
     with tab_users:
-        st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Manage platform access, approvals, and subscription cycles.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Manage active platform access and subscription cycles.</div>', unsafe_allow_html=True)
 
         col_logout, col_empty = st.columns([1, 4])
         with col_logout:
             if st.button("Logout Admin", key="admin_logout_btn", use_container_width=True):
-                print("[AUTH] Admin logged out.")
                 clear_all_auth_state()
                 st.rerun()
 
         try:
             response = supabase.table("users_access").select(
-                "name, email, company_type, payment_done, approved, start_date, end_date"
-            ).order("created_at", desc=True).execute()
+                "name, email, company_type, payment_done, approved, start_date, end_date, is_archived"
+            ).eq("is_archived", False).order("created_at", desc=True).execute()
             users = response.data or []
         except Exception:
-            st.error("Operational data is temporarily unavailable.")
-            return
+            # Fallback for when column doesn't exist
+            try:
+                response = supabase.table("users_access").select("*").order("created_at", desc=True).execute()
+                users = response.data or []
+            except Exception:
+                st.error("Operational data is temporarily unavailable.")
+                return
 
         if not users:
-            st.info("No registered users found.")
+            st.info("No active users found.")
         else:
-            # [DIAGNOSTIC] Admin Diagnostic Panel
-            with st.expander("🛠️ System Diagnostics", expanded=False):
-                diag_cols = st.columns(3)
-                with diag_cols[0]:
-                    st.write(f"**Build:** `{BUILD_VERSION}`")
-                    st.write(f"**Route:** `{st.session_state.page}`")
-                with diag_cols[1]:
-                    st.write(f"**Email:** `{st.session_state.user_email}`")
-                    st.write(f"**Auth:** `{st.session_state.authenticated}`")
-                with diag_cols[2]:
-                    st.write(f"**Approved:** `{st.session_state.approved}`")
-                    st.write(f"**Paid:** `{st.session_state.payment_done}`")
+            render_user_table(users, archived_view=False)
 
-            # Table Header with specific styling
-            st.markdown('<div style="background: #0B0B0B; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;">', unsafe_allow_html=True)
-            
-            # Header row
-            h_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
-            labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
-            for col, label in zip(h_cols, labels):
-                col.markdown(f'<p style="color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">{label}</p>', unsafe_allow_html=True)
-            
-            st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 16px;"></div>', unsafe_allow_html=True)
+    with tab_archived_users:
+        st.markdown('<div class="subtitle" style="text-align: left; margin-left: 0; margin-bottom: 24px;">Historical access records and archived accounts.</div>', unsafe_allow_html=True)
+        try:
+            response = supabase.table("users_access").select(
+                "name, email, company_type, payment_done, approved, start_date, end_date, is_archived"
+            ).eq("is_archived", True).order("archived_at", desc=True).execute()
+            archived_users = response.data or []
+        except Exception:
+            archived_users = []
 
-            today = datetime.now(timezone.utc)
-            for idx, record in enumerate(users):
-                row_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
-                email = record.get("email")
-                
-                with row_cols[0]:
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("name") or "-"}</p>', unsafe_allow_html=True)
-                with row_cols[1]:
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px; color: rgba(255,255,255,0.8);">{email or "-"}</p>', unsafe_allow_html=True)
-                with row_cols[2]:
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("company_type") or "-"}</p>', unsafe_allow_html=True)
-                with row_cols[3]:
-                    status_paid = "Yes" if record.get("payment_done") else "No"
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_paid}</p>', unsafe_allow_html=True)
-                with row_cols[4]:
-                    status_app = "Yes" if record.get("approved") else "No"
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{status_app}</p>', unsafe_allow_html=True)
-                with row_cols[5]:
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("start_date") or "-"}</p>', unsafe_allow_html=True)
-                with row_cols[6]:
-                    st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("end_date") or "-"}</p>', unsafe_allow_html=True)
-                
-                with row_cols[7]:
-                    # Action buttons in a horizontal row
-                    btn_cols = st.columns([1, 1, 1.4])
-                    
-                    with btn_cols[0]:
-                        if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
-                            start_date = today.date().isoformat()
-                            end_date = (today + timedelta(days=28)).date().isoformat()
-                            payload = {
-                                "approved": True,
-                                "payment_done": True,
-                                "start_date": start_date,
-                                "end_date": end_date,
-                                "is_active": True,
-                            }
-                            updated = save_user_record(email, payload)
-                            if updated and updated.get("approved") is True:
-                                log_access_event(email, "approval")
-                                st.success(f"Successfully approved {email}")
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to approve {email}. Persistence failed.")
-
-                    with btn_cols[1]:
-                        if st.button("Revoke", key=f"revoke_{idx}", use_container_width=True):
-                            payload = {"approved": False, "is_active": False}
-                            updated = save_user_record(email, payload)
-                            if updated and updated.get("approved") is False:
-                                log_access_event(email, "revoke")
-                                st.success(f"Successfully revoked {email}")
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to revoke {email}. Persistence failed.")
-
-                    with btn_cols[2]:
-                        if st.button("Extend 28d", key=f"extend_{idx}", use_container_width=True):
-                            current_end = record.get("end_date")
-                            if current_end:
-                                try:
-                                    parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
-                                    if parsed_end.tzinfo is None:
-                                        parsed_end = parsed_end.replace(tzinfo=timezone.utc)
-                                except Exception:
-                                    parsed_end = today
-                            else:
-                                parsed_end = today
-                            new_end = (parsed_end + timedelta(days=28)).date().isoformat()
-                            payload = {
-                                "end_date": new_end,
-                                "approved": True,
-                                "payment_done": True,
-                            }
-                            updated = save_user_record(email, payload)
-                            if updated and str(updated.get("end_date")) == new_end:
-                                log_access_event(email, "extend_access")
-                                st.success(f"Successfully extended {email} to {new_end}")
-                                st.rerun()
-                            else:
-                                st.error(f"Failed to extend {email}. Persistence failed.")
-                
-                st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.04); margin: 8px 0;"></div>', unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+        if not archived_users:
+            st.info("No archived access records found.")
+        else:
+            render_user_table(archived_users, archived_view=True)
 
     with tab_requests:
         st.markdown("### Maritime Intelligence Queue")
@@ -1729,7 +1706,6 @@ def render_admin_panel():
             res = supabase.table("intelligence_requests").select("*").eq("archived", False).order("created_at", desc=True).execute()
             all_reqs = res.data or []
         except Exception:
-            # Fallback for when column doesn't exist yet
             try:
                 res = supabase.table("intelligence_requests").select("*").order("created_at", desc=True).execute()
                 all_reqs = res.data or []
@@ -1741,21 +1717,9 @@ def render_admin_panel():
             st.info("No active intelligence requests pending.")
         else:
             for req in all_reqs:
-                # ... existing logic ...
-                # Add Archive button for Delivered requests
-                if req.get("status") == "Delivered":
-                    if st.button("Archive Request", key=f"archive_{req.get('id')}", use_container_width=True):
-                        try:
-                            supabase.table("intelligence_requests").update({
-                                "archived": True,
-                                "archived_at": datetime.now(timezone.utc).isoformat()
-                            }).eq("id", req.get("id")).execute()
-                            st.success("Request archived.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Archive failed: {str(e)}")
+                render_analyst_workspace(req)
 
-    with tab_archived:
+    with tab_archived_reqs:
         st.markdown("### Institutional Archive")
         try:
             res = supabase.table("intelligence_requests").select("*").eq("archived", True).order("archived_at", desc=True).execute()
@@ -1769,7 +1733,7 @@ def render_admin_panel():
             for req in archived_reqs:
                 with st.expander(f"📦 {req.get('vessel_name')} (Archived: {req.get('archived_at', '')[:10]})", expanded=False):
                     st.write(f"**ID:** `{req.get('id')}` | **User:** {req.get('submitted_by')}")
-                    if st.button("Restore to Active Queue", key=f"restore_{req.get('id')}", use_container_width=True):
+                    if st.button("Restore to Active Queue", key=f"restore_req_{req.get('id')}", use_container_width=True):
                         try:
                             supabase.table("intelligence_requests").update({
                                 "archived": False,
@@ -1780,298 +1744,329 @@ def render_admin_panel():
                         except Exception as e:
                             st.error(f"Restore failed: {str(e)}")
                     
-                    # Also show download link in archive
-                    report_path = req.get("report_path")
-                    report_storage_url = req.get("report_storage_url")
-                    if report_storage_url:
-                        st.link_button("Download Report (Cloud)", report_storage_url, use_container_width=True)
-                    elif report_path and os.path.exists(report_path):
-                        with open(report_path, "rb") as f:
+                    # Safe report handling
+                    report_path_local = req.get("report_path")
+                    report_url_cloud = req.get("report_storage_url")
+                    
+                    if report_url_cloud:
+                        st.link_button("Download Report (Cloud)", report_url_cloud, use_container_width=True)
+                    elif report_path_local and os.path.exists(report_path_local):
+                        with open(report_path_local, "rb") as f:
                             st.download_button(
                                 label="Download Local Report",
                                 data=f.read(),
-                                file_name=os.path.basename(report_path),
+                                file_name=os.path.basename(report_path_local),
                                 mime="application/pdf",
-                                key=f"dl_admin_archived_{req.get('id')}",
+                                key=f"dl_admin_archived_local_{req.get('id')}",
                                 use_container_width=True
                             )
                     else:
-                        st.warning("Archived report file unavailable on current instance")
-                # SLA and Request Age
-                created_at_raw = req.get("created_at")
-                if created_at_raw:
-                    try:
-                        created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
-                        age = datetime.now(timezone.utc) - created_at
-                        age_str = f"{age.days}d {age.seconds // 3600}h"
-                    except Exception:
-                        age_str = "N/A"
-                else:
-                    age_str = "N/A"
+                        st.warning("Archived report unavailable locally. Regeneration or cloud retrieval required.")
+
+def render_user_table(users, archived_view=False):
+    # Table Header
+    st.markdown('<div style="background: #0B0B0B; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px;">', unsafe_allow_html=True)
+    
+    # Header row
+    h_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
+    labels = ["Name", "Email", "Company", "Paid", "Approved", "Start", "End", "Actions"]
+    for col, label in zip(h_cols, labels):
+        col.markdown(f'<p style="color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">{label}</p>', unsafe_allow_html=True)
+    
+    st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 16px;"></div>', unsafe_allow_html=True)
+
+    today = datetime.now(timezone.utc)
+    for idx, record in enumerate(users):
+        row_cols = st.columns([1.5, 2.2, 1.2, 0.8, 1, 1.2, 1.2, 3.5])
+        email = record.get("email")
+        
+        with row_cols[0]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("name") or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[1]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px; color: rgba(255,255,255,0.8);">{email or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[2]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("company_type") or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[3]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{"Yes" if record.get("payment_done") else "No"}</p>', unsafe_allow_html=True)
+        with row_cols[4]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{"Yes" if record.get("approved") else "No"}</p>', unsafe_allow_html=True)
+        with row_cols[5]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("start_date") or "-"}</p>', unsafe_allow_html=True)
+        with row_cols[6]:
+            st.markdown(f'<p style="font-size: 14px; margin-top: 8px;">{record.get("end_date") or "-"}</p>', unsafe_allow_html=True)
+        
+        with row_cols[7]:
+            btn_cols = st.columns([1, 1, 1.4, 1])
+            
+            if not archived_view:
+                with btn_cols[0]:
+                    if st.button("Approve", key=f"approve_{idx}", use_container_width=True):
+                        payload = {
+                            "approved": True, "payment_done": True, "is_active": True,
+                            "start_date": today.date().isoformat(),
+                            "end_date": (today + timedelta(days=28)).date().isoformat()
+                        }
+                        save_user_record(email, payload)
+                        st.rerun()
+
+                with btn_cols[1]:
+                    if st.button("Revoke", key=f"revoke_{idx}", use_container_width=True):
+                        save_user_record(email, {"approved": False, "is_active": False})
+                        st.rerun()
+
+                with btn_cols[2]:
+                    if st.button("Extend", key=f"extend_{idx}", use_container_width=True):
+                        current_end = record.get("end_date")
+                        try:
+                            parsed_end = datetime.fromisoformat(str(current_end).replace("Z", "+00:00"))
+                        except Exception:
+                            parsed_end = today
+                        new_end = (parsed_end + timedelta(days=28)).date().isoformat()
+                        save_user_record(email, {"end_date": new_end, "approved": True})
+                        st.rerun()
+
+                with btn_cols[3]:
+                    if st.button("Archive", key=f"archive_user_{idx}", use_container_width=True):
+                        save_user_record(email, {"is_archived": True, "archived_at": today.isoformat()})
+                        st.rerun()
+            else:
+                with btn_cols[0]:
+                    if st.button("Restore", key=f"restore_user_{idx}", use_container_width=True):
+                        save_user_record(email, {"is_archived": False, "archived_at": None})
+                        st.rerun()
+        
+        st.markdown('<div style="height: 1px; background: rgba(255,255,255,0.04); margin: 8px 0;"></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def render_analyst_workspace(req):
+    # SLA and Request Age
+    created_at_raw = req.get("created_at")
+    try:
+        created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+        age = datetime.now(timezone.utc) - created_at
+        age_str = f"{age.days}d {age.seconds // 3600}h"
+    except Exception:
+        age_str = "N/A"
+    
+    status_color = {
+        "Pending Review": "🔴",
+        "Under Investigation": "🟡",
+        "Awaiting Analyst Input": "🟠",
+        "Analyst Review": "🔵",
+        "Ready for Delivery": "🟢",
+        "Delivered": "⚪"
+    }.get(req.get("status"), "⚪")
+
+    with st.expander(f"{status_color} {req.get('vessel_name')} ({req.get('status')}) — Age: {age_str}", expanded=False):
+        st.markdown(f"**Request ID:** `{req.get('id')}` | **User:** {req.get('submitted_by')}")
+        
+        # --- SECTION 1: VESSEL PROFILE ---
+        st.markdown("#### SECTION 1 — Vessel Profile")
+        v_col1, v_col2 = st.columns(2)
+        with v_col1:
+            st.write(f"**Vessel:** {req.get('vessel_name')}")
+            st.write(f"**IMO:** {req.get('imo_number') or 'N/A'}")
+            st.write(f"**Flag:** {req.get('flag_state') or 'N/A'}")
+        with v_col2:
+            st.write(f"**Owner:** {req.get('owner') or 'N/A'}")
+            st.write(f"**Charterer:** {req.get('charterer') or 'N/A'}")
+            st.write(f"**Jurisdiction:** {req.get('jurisdiction') or 'N/A'}")
+        
+        st.info(f"**User Operational Notes:** {req.get('operational_notes') or 'None'}")
+        
+        st.markdown("---")
+        
+        # --- SECTION 2: ANALYST ENRICHMENT ---
+        st.markdown("#### SECTION 2 — Analyst Enrichment")
+        with st.form(f"enrichment_form_{req.get('id')}"):
+            e_col1, e_col2 = st.columns(2)
+            with e_col1:
+                status = st.selectbox("Update Status", 
+                    ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"],
+                    index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"].index(req.get("status", "Pending Review"))
+                )
+                risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
+                    index=["Low", "Medium", "High"].index(req.get("risk_level", "Medium"))
+                )
+            with e_col2:
+                analyst_name = st.text_input("Analyst Assigned", value=req.get("analyst_name") or "")
+                confidence = st.select_slider("Confidence Level", options=["Low", "Medium", "High"], value=req.get("confidence_level", "Medium"))
+
+            findings = st.text_area("Sanctions Findings", value=req.get("sanctions_findings") or "")
+            ownership = st.text_area("Ownership Analysis", value=req.get("ownership_analysis") or "")
+            ais_review = st.text_area("AIS Behavior Review", value=req.get("ais_behavior_review") or "")
+            narrative = st.text_area("Analyst Narrative (Executive Summary)", value=req.get("analyst_narrative") or "")
+            recommendation = st.text_area("Compliance Recommendation", value=req.get("compliance_recommendation") or "")
+            
+            if st.form_submit_button("SAVE ANALYST WORKSPACE"):
+                try:
+                    update_data = {
+                        "status": status,
+                        "risk_level": risk_lvl,
+                        "analyst_name": analyst_name,
+                        "confidence_level": confidence,
+                        "sanctions_findings": findings,
+                        "ownership_analysis": ownership,
+                        "ais_behavior_review": ais_review,
+                        "analyst_narrative": narrative,
+                        "compliance_recommendation": recommendation,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "delivered_at": datetime.now(timezone.utc).isoformat() if status == "Delivered" else req.get("delivered_at"),
+                        "archived": False
+                    }
+                    supabase.table("intelligence_requests").update(update_data).eq("id", req.get("id")).execute()
+                    st.success("Analyst workspace persisted successfully.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Save failed: {str(e)}")
+
+        # --- SUB-SECTIONS ---
+        enrich_tabs = st.tabs(["Timeline Builder", "Source Citations", "Port Calls", "Ownership History", "Evidence Appendix"])
+        
+        with enrich_tabs[0]:
+            st.write("**Operational Timeline**")
+            timeline = req.get("timeline_events") or []
+            for item in timeline:
+                st.write(f"• {item.get('date')} | {item.get('event')} ({item.get('jurisdiction')})")
+            
+            with st.form(f"timeline_form_{req.get('id')}"):
+                t_date = st.date_input("Date")
+                t_event = st.text_input("Event")
+                t_juris = st.text_input("Jurisdiction")
+                if st.form_submit_button("Add Timeline Entry"):
+                    timeline.append({"date": t_date.isoformat(), "event": t_event, "jurisdiction": t_juris})
+                    supabase.table("intelligence_requests").update({"timeline_events": timeline}).eq("id", req.get("id")).execute()
+                    st.rerun()
+
+        with enrich_tabs[1]:
+            st.write("**Source Citations**")
+            citations = req.get("citations") or []
+            for c in citations:
+                st.write(f"• [{c.get('source')}]({c.get('url')}) - {c.get('observation')}")
+            
+            with st.form(f"citation_form_{req.get('id')}"):
+                c_src = st.text_input("Source")
+                c_url = st.text_input("URL")
+                c_obs = st.text_area("Observation")
+                if st.form_submit_button("Add Citation"):
+                    citations.append({"source": c_src, "url": c_url, "observation": c_obs, "access_date": datetime.now(timezone.utc).isoformat()})
+                    supabase.table("intelligence_requests").update({"citations": citations}).eq("id", req.get("id")).execute()
+                    st.rerun()
+
+        with enrich_tabs[2]:
+            st.write("**Port Call Chronology**")
+            port_calls = req.get("port_calls") or []
+            for p in port_calls:
+                st.write(f"• {p.get('port')} ({p.get('arrival')} - {p.get('departure')}) | Risk: {p.get('risk') or 'Low'}")
+            
+            with st.form(f"port_form_{req.get('id')}"):
+                p_name = st.text_input("Port")
+                p_col1, p_col2 = st.columns(2)
+                with p_col1: p_arr = st.date_input("Arrival")
+                with p_col2: p_dep = st.date_input("Departure")
+                p_risk = st.selectbox("Risk Level", ["Low", "Medium", "High", "Critical"])
+                if st.form_submit_button("Add Port Call"):
+                    port_calls.append({"port": p_name, "arrival": p_arr.isoformat(), "departure": p_dep.isoformat(), "risk": p_risk})
+                    supabase.table("intelligence_requests").update({"port_calls": port_calls}).eq("id", req.get("id")).execute()
+                    st.rerun()
+
+        with enrich_tabs[3]:
+            st.write("**Ownership History**")
+            ownership = req.get("ownership_history") or []
+            for o in ownership:
+                st.write(f"• {o.get('company')} ({o.get('jurisdiction')}) | {o.get('start')} - {o.get('end') or 'Current'}")
+            
+            with st.form(f"owner_form_{req.get('id')}"):
+                o_comp = st.text_input("Company")
+                o_juris = st.text_input("Jurisdiction")
+                o_col1, o_col2 = st.columns(2)
+                with o_col1: o_start = st.date_input("Start")
+                with o_col2: o_end = st.date_input("End (optional)")
+                if st.form_submit_button("Add Ownership Record"):
+                    ownership.append({"company": o_comp, "jurisdiction": o_juris, "start": o_start.isoformat(), "end": o_end.isoformat() if o_end else None})
+                    supabase.table("intelligence_requests").update({"ownership_history": ownership}).eq("id", req.get("id")).execute()
+                    st.rerun()
+
+        with enrich_tabs[4]:
+            st.write("**Evidence Appendix**")
+            with st.form(f"evidence_form_{req.get('id')}"):
+                shell_indicators = st.text_area("Shell Company Indicators", value=req.get("shell_company_indicators") or "")
+                sts_obs = st.text_area("STS Transfer Observations", value=req.get("sts_transfer_observations") or "")
+                risk_json = st.text_area("Risk Matrix Data (JSON)", value=json.dumps(req.get("risk_indicators") or []))
                 
-                status_color = {
-                    "Pending Review": "🔴",
-                    "Under Investigation": "🟡",
-                    "Awaiting Analyst Input": "🟠",
-                    "Analyst Review": "🔵",
-                    "Ready for Delivery": "🟢",
-                    "Delivered": "⚪"
-                }.get(req.get("status"), "⚪")
+                if st.form_submit_button("SAVE EVIDENCE APPENDIX"):
+                    try:
+                        supabase.table("intelligence_requests").update({
+                            "shell_company_indicators": shell_indicators,
+                            "sts_transfer_observations": sts_obs,
+                            "risk_indicators": json.loads(risk_json)
+                        }).eq("id", req.get("id")).execute()
+                        st.success("Evidence appendix persisted.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Save failed: {str(e)}")
 
-                with st.expander(f"{status_color} {req.get('vessel_name')} ({req.get('status')}) — Age: {age_str}", expanded=False):
-                    st.markdown(f"**Request ID:** `{req.get('id')}` | **User:** {req.get('submitted_by')}")
-                    v_col1, v_col2 = st.columns(2)
-                    with v_col1:
-                        st.write(f"**Vessel:** {req.get('vessel_name')}")
-                        st.write(f"**IMO:** {req.get('imo_number') or 'N/A'}")
-                        st.write(f"**Flag:** {req.get('flag_state') or 'N/A'}")
-                    with v_col2:
-                        st.write(f"**Owner:** {req.get('owner') or 'N/A'}")
-                        st.write(f"**Charterer:** {req.get('charterer') or 'N/A'}")
-                        st.write(f"**Jurisdiction:** {req.get('jurisdiction') or 'N/A'}")
-                    
-                    st.write(f"**User Notes:** {req.get('operational_notes') or 'None'}")
-                    
-                    st.markdown("---")
-                    st.markdown("#### Analyst Workspace & Enrichment")
-                    
-                    # --- ENRICHMENT TABS ---
-                    enrich_tabs = st.tabs(["Status", "Timeline", "Citations", "Port Calls", "Ownership", "Evidence", "Sign-off"])
-                    
-                    with enrich_tabs[0]:
-                        with st.form(f"status_form_{req.get('id')}"):
-                            new_status = st.selectbox("Update Status", 
-                                ["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"],
-                                index=["Pending Review", "Under Investigation", "Awaiting Analyst Input", "Analyst Review", "Ready for Delivery", "Delivered"].index(req.get("status", "Pending Review"))
+        st.markdown("---")
+        st.markdown("#### Report Controls")
+        gen_col1, gen_col2, gen_col3 = st.columns(3)
+        with gen_col1:
+            if st.button("Generate Institutional Report", key=f"gen_{req.get('id')}", use_container_width=True):
+                with st.spinner("Compiling institutional report..."):
+                    try:
+                        current_version = int(req.get("report_version") or 0) + 1
+                        pdf_bytes = generate_pdf(req, req) 
+                        
+                        if not os.path.exists("generated_reports"):
+                            os.makedirs("generated_reports")
+                        
+                        v_name = (req.get('vessel_name') or 'Unknown').replace(' ', '_')
+                        filename = f"ChaAVON_Intel_{v_name}_v{current_version}.pdf"
+                        filepath = os.path.join("generated_reports", filename)
+                        
+                        with open(filepath, "wb") as f:
+                            f.write(pdf_bytes)
+                        
+                        # Cloud Upload
+                        storage_url = None
+                        try:
+                            bucket_name = "generated-reports"
+                            cloud_filename = f"{req.get('id')}_v{current_version}_{filename}"
+                            supabase.storage.from_(bucket_name).upload(
+                                path=cloud_filename, file=pdf_bytes,
+                                file_options={"content-type": "application/pdf"}
                             )
-                            risk_lvl = st.selectbox("Risk Level", ["Low", "Medium", "High"], 
-                                index=["Low", "Medium", "High"].index(req.get("risk_level", "Medium"))
-                            )
-                            analyst_notes = st.text_area("Internal Analyst Notes", value=req.get("analyst_notes") or "")
-                            
-                            if st.form_submit_button("Update Status"):
-                                try:
-                                    supabase.table("intelligence_requests").update({
-                                        "status": new_status,
-                                        "risk_level": risk_lvl,
-                                        "analyst_notes": analyst_notes,
-                                        "delivered_at": datetime.now(timezone.utc).isoformat() if new_status == "Delivered" else req.get("delivered_at"),
-                                        "archived": False # Reset archive if status changes
-                                    }).eq("id", req.get("id")).execute()
-                                    st.success("Status updated.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Update failed: {str(e)}")
-
-                    with enrich_tabs[1]:
-                        st.write("**Vessel Timeline**")
-                        timeline = req.get("timeline_events") or []
-                        for i, item in enumerate(timeline):
-                            st.write(f"{item.get('date')} - {item.get('event')} ({item.get('jurisdiction')})")
+                            storage_url = supabase.storage.from_(bucket_name).get_public_url(cloud_filename)
+                        except Exception as e:
+                            print(f"[STORAGE] Upload failed: {str(e)}")
                         
-                        with st.form(f"timeline_form_{req.get('id')}"):
-                            t_date = st.date_input("Date")
-                            t_event = st.text_input("Event (e.g., Flag Change, AIS Blackout)")
-                            t_juris = st.text_input("Jurisdiction")
-                            t_notes = st.text_area("Notes")
-                            if st.form_submit_button("Add Timeline Entry"):
-                                timeline.append({
-                                    "date": t_date.isoformat(),
-                                    "event": t_event,
-                                    "jurisdiction": t_juris,
-                                    "notes": t_notes
-                                })
-                                supabase.table("intelligence_requests").update({"timeline_events": timeline}).eq("id", req.get("id")).execute()
-                                st.rerun()
+                        update_payload = {
+                            "report_version": current_version,
+                            "report_path": filepath,
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        if storage_url:
+                            update_payload["report_storage_url"] = storage_url
 
-                    with enrich_tabs[2]:
-                        st.write("**Sanctions Source Citations**")
-                        citations = req.get("citations") or []
-                        for c in citations:
-                            st.write(f"[{c.get('source')}]({c.get('url')}) - {c.get('observation')}")
-                        
-                        with st.form(f"citation_form_{req.get('id')}"):
-                            c_source = st.text_input("Source Name")
-                            c_url = st.text_input("Source URL")
-                            c_obs = st.text_area("Observation")
-                            if st.form_submit_button("Add Citation"):
-                                citations.append({
-                                    "source": c_source,
-                                    "url": c_url,
-                                    "observation": c_obs,
-                                    "access_date": datetime.now(timezone.utc).isoformat()
-                                })
-                                supabase.table("intelligence_requests").update({"citations": citations}).eq("id", req.get("id")).execute()
-                                st.rerun()
+                        supabase.table("intelligence_requests").update(update_payload).eq("id", req.get("id")).execute()
+                        st.success(f"Report v{current_version} finalized.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Generation failed: {str(e)}")
 
-                    with enrich_tabs[3]:
-                        st.write("**Port Call Chronology**")
-                        port_calls = req.get("port_calls") or []
-                        for p in port_calls:
-                            st.write(f"{p.get('port')} ({p.get('arrival')} to {p.get('departure')})")
-                        
-                        with st.form(f"port_form_{req.get('id')}"):
-                            p_name = st.text_input("Port Name")
-                            p_arr = st.date_input("Arrival Date")
-                            p_dep = st.date_input("Departure Date")
-                            p_risk = st.text_input("Risk Observation")
-                            p_notes = st.text_area("Activity Notes")
-                            if st.form_submit_button("Add Port Call"):
-                                port_calls.append({
-                                    "port": p_name,
-                                    "arrival": p_arr.isoformat(),
-                                    "departure": p_dep.isoformat(),
-                                    "risk": p_risk,
-                                    "notes": p_notes
-                                })
-                                supabase.table("intelligence_requests").update({"port_calls": port_calls}).eq("id", req.get("id")).execute()
-                                st.rerun()
+        with gen_col2:
+            report_url = req.get("report_storage_url")
+            if report_url:
+                st.link_button("View Cloud Report", report_url, use_container_width=True)
+            else:
+                st.info("No cloud archive.")
 
-                    with enrich_tabs[4]:
-                        st.write("**Ownership History**")
-                        ownership = req.get("ownership_history") or []
-                        for o in ownership:
-                            st.write(f"{o.get('company')} ({o.get('jurisdiction')})")
-                        
-                        with st.form(f"owner_form_{req.get('id')}"):
-                            o_comp = st.text_input("Company Name")
-                            o_juris = st.text_input("Jurisdiction")
-                            o_start = st.date_input("Start Date")
-                            o_end = st.date_input("End Date (leave if current)")
-                            o_notes = st.text_area("Ownership Notes")
-                            if st.form_submit_button("Add Ownership Entry"):
-                                ownership.append({
-                                    "company": o_comp,
-                                    "jurisdiction": o_juris,
-                                    "start": o_start.isoformat(),
-                                    "end": o_end.isoformat() if o_end else None,
-                                    "notes": o_notes
-                                })
-                                supabase.table("intelligence_requests").update({"ownership_history": ownership}).eq("id", req.get("id")).execute()
-                                st.rerun()
-
-                    with enrich_tabs[5]:
-                        st.write("**Evidence Appendix**")
-                        evidence = req.get("evidence_attachments") or []
-                        for e in evidence:
-                            st.write(f"- {e.get('name')} ({e.get('type')})")
-                        
-                        with st.form(f"evidence_form_{req.get('id')}"):
-                            e_name = st.text_input("Evidence Title")
-                            e_type = st.selectbox("Type", ["Screenshot", "PDF Extract", "Registry Document", "Analyst Note"])
-                            e_desc = st.text_area("Description / Analyst Observations")
-                            if st.form_submit_button("Add Evidence Reference"):
-                                evidence.append({
-                                    "name": e_name,
-                                    "type": e_type,
-                                    "description": e_desc,
-                                    "added_at": datetime.now(timezone.utc).isoformat()
-                                })
-                                supabase.table("intelligence_requests").update({"evidence_attachments": evidence}).eq("id", req.get("id")).execute()
-                                st.rerun()
-
-                    with enrich_tabs[6]:
-                        st.write("**Analyst Sign-off**")
-                        with st.form(f"signoff_form_{req.get('id')}"):
-                            a_name = st.text_input("Analyst Name", value=req.get("analyst_name") or "")
-                            conf_lvl = st.select_slider("Confidence Level", options=["Low", "Medium", "High"], value=req.get("confidence_level", "Medium"))
-                            rec_lvl = st.select_slider("Recommendation Level", options=["Standard Due Diligence", "Enhanced Due Diligence", "Escalation Recommended"], value=req.get("recommendation_level", "Standard Due Diligence"))
-                            
-                            if st.form_submit_button("Sign Off & Finalize"):
-                                try:
-                                    supabase.table("intelligence_requests").update({
-                                        "analyst_name": a_name,
-                                        "confidence_level": conf_lvl,
-                                        "recommendation_level": rec_lvl,
-                                        "analyst_timestamp": datetime.now(timezone.utc).isoformat(),
-                                        "status": "Ready for Delivery"
-                                    }).eq("id", req.get("id")).execute()
-                                    st.success("Sign-off complete. Report marked as Ready for Delivery.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Sign-off failed: {str(e)}")
-
-                    st.markdown("---")
-                    st.markdown("#### Report Generation")
-                    gen_col1, gen_col2 = st.columns(2)
-                    with gen_col1:
-                        if st.button("Generate Institutional Report", key=f"gen_{req.get('id')}"):
-                            with st.spinner("Generating 10+ page intelligence report..."):
-                                try:
-                                    import os
-                                    # Versioning
-                                    current_version = int(req.get("report_version") or 0) + 1
-                                    
-                                    # Generate PDF
-                                    pdf_bytes = generate_pdf(req, req) 
-                                    
-                                    # Archival
-                                    if not os.path.exists("generated_reports"):
-                                        os.makedirs("generated_reports")
-                                    
-                                    v_name = (req.get('vessel_name') or 'Unknown').replace(' ', '_')
-                                    imo = req.get('imo_number') or 'NOIMO'
-                                    filename = f"ChaAVON_Report_{v_name}_{imo}_v{current_version}.pdf"
-                                    filepath = os.path.join("generated_reports", filename)
-                                    
-                                    with open(filepath, "wb") as f:
-                                        f.write(pdf_bytes)
-                                    
-                                    # Cloud Storage Upload
-                                    storage_url = None
-                                    try:
-                                        bucket_name = "generated-reports"
-                                        # Ensure unique cloud filename
-                                        cloud_filename = f"{req.get('id')}_{filename}"
-                                        
-                                        # Simple binary upload
-                                        supabase.storage.from_(bucket_name).upload(
-                                            path=cloud_filename,
-                                            file=pdf_bytes,
-                                            file_options={"content-type": "application/pdf"}
-                                        )
-                                        
-                                        # Get public URL
-                                        res_url = supabase.storage.from_(bucket_name).get_public_url(cloud_filename)
-                                        if res_url:
-                                            storage_url = res_url
-                                    except Exception as e:
-                                        print(f"[STORAGE] Upload failed: {str(e)}")
-                                    
-                                    # Update Supabase
-                                    update_payload = {
-                                        "report_version": current_version,
-                                        "report_path": filepath,
-                                        "updated_at": datetime.now(timezone.utc).isoformat()
-                                    }
-                                    if storage_url:
-                                        update_payload["report_storage_url"] = storage_url
-
-                                    supabase.table("intelligence_requests").update(update_payload).eq("id", req.get("id")).execute()
-                                    
-                                    st.success(f"Report v{current_version} generated and archived (Cloud: {'Yes' if storage_url else 'Local Only'}).")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Generation failed: {str(e)}")
-
-                    with gen_col2:
-                        report_path = req.get("report_path")
-                        if report_path:
-                            st.write(f"Current Version: v{req.get('report_version')}")
-                            if os.path.exists(report_path):
-                                with open(report_path, "rb") as f:
-                                    st.download_button(
-                                        label="Download Archived Report",
-                                        data=f.read(),
-                                        file_name=os.path.basename(report_path),
-                                        mime="application/pdf",
-                                        use_container_width=True
-                                    )
-                            else:
-                                st.info("Archived report file is not available on this instance yet. Regenerate the report to restore local download access.")
-                        else:
-                            st.info("No report generated for this request yet.")
-
+        with gen_col3:
+            if req.get("status") == "Delivered":
+                if st.button("Archive Request", key=f"archive_req_{req.get('id')}", use_container_width=True):
+                    supabase.table("intelligence_requests").update({
+                        "archived": True, "archived_at": datetime.now(timezone.utc).isoformat()
+                    }).eq("id", req.get("id")).execute()
+                    st.rerun()
 
 def render_admin_page():
     render_top_nav()
@@ -2263,9 +2258,6 @@ def render_workspace_page():
                             except Exception as e:
                                 st.error(f"Report generation error: {str(e)}")
 
-    # Footer build version
-    st.markdown(f'<div style="position: fixed; bottom: 10px; right: 20px; font-size: 10px; color: rgba(255,255,255,0.3);">Build {BUILD_VERSION}</div>', unsafe_allow_html=True)
-
 
 page = st.session_state.page
 if page == "home":
@@ -2286,6 +2278,3 @@ elif page == "dashboard":
     render_workspace_page()
 else:
     render_landing_page()
-
-if st.session_state.page != "workspace":
-    render_footer()
